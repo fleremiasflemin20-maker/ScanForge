@@ -1,0 +1,26 @@
+# mac-reconstruct (Swift)
+mac-reconstruct/.build/
+mac-reconstruct/.swiftpm/
+
+# ios-capture (Xcode/XcodeGen)
+ios-capture/*.xcodeproj/
+ios-capture/.build/
+ios-capture/DerivedData/
+
+# mesh-prep (Python)
+mesh-prep/.venv/
+mesh-prep/.venv-test/
+mesh-prep/__pycache__/
+mesh-prep/**/__pycache__/
+mesh-prep/.pytest_cache/
+mesh-prep/*.egg-info/
+mesh-prep/build/
+mesh-prep/dist/
+
+# Datos generados (capturas, reconstrucciones, piezas listas para imprimir)
+captures/
+reconstructions/
+printable/
+
+# Sistema
+.DS_Store

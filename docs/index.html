@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ScanForge</title>
+<style>
+  :root{
+    --bg:#f7f6f3; --panel:#ffffff; --ink:#1b1b1f; --sub:#5b5b63;
+    --line:#e4e2dd; --accent:#b5541f; --accent-ink:#ffffff;
+    --ok:#2f7a4a; --warn:#9a6b00; --code-bg:#f1efe9;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#15151a; --panel:#1c1c22; --ink:#f0efec; --sub:#a6a4ac;
+      --line:#2c2c34; --accent:#e07a42; --accent-ink:#1b1b1f;
+      --ok:#5bc584; --warn:#e0b84a; --code-bg:#111115;
+    }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.55;
+  }
+  .wrap{max-width:860px; margin:0 auto; padding:64px 24px 96px;}
+  header{margin-bottom:48px;}
+  .kicker{
+    font-size:13px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--accent); font-weight:600; margin:0 0 10px;
+  }
+  h1{font-size:40px; margin:0 0 12px; letter-spacing:-0.01em;}
+  .tagline{font-size:18px; color:var(--sub); margin:0 0 24px; max-width:640px;}
+  .flow{
+    display:flex; flex-wrap:wrap; gap:8px; align-items:center;
+    font-size:14px; color:var(--sub); margin-bottom:28px;
+  }
+  .flow span.step{
+    background:var(--panel); border:1px solid var(--line); border-radius:8px;
+    padding:6px 12px; color:var(--ink); font-weight:500;
+  }
+  .flow span.arrow{color:var(--sub);}
+  .cta{display:flex; gap:12px; flex-wrap:wrap;}
+  .btn{
+    display:inline-flex; align-items:center; gap:8px;
+    padding:10px 18px; border-radius:8px; font-weight:600; font-size:14px;
+    text-decoration:none; border:1px solid var(--line);
+  }
+  .btn.primary{background:var(--accent); color:var(--accent-ink); border-color:var(--accent);}
+  .btn.ghost{background:var(--panel); color:var(--ink);}
+
+  h2{font-size:22px; margin:56px 0 18px; letter-spacing:-0.01em;}
+  .grid{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  @media (max-width:640px){.grid{grid-template-columns:1fr;}}
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:20px; display:flex; flex-direction:column; gap:10px;
+  }
+  .card h3{margin:0; font-size:16px;}
+  .card p{margin:0; color:var(--sub); font-size:14px;}
+  .card a{color:var(--accent); font-size:14px; font-weight:600; text-decoration:none;}
+  .badge{
+    display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600;
+    padding:3px 9px; border-radius:999px; width:fit-content;
+  }
+  .badge.ok{background:color-mix(in srgb, var(--ok) 18%, transparent); color:var(--ok);}
+  .badge.warn{background:color-mix(in srgb, var(--warn) 18%, transparent); color:var(--warn);}
+  .badge::before{content:"●"; font-size:9px;}
+
+  pre{
+    background:var(--code-bg); border:1px solid var(--line); border-radius:10px;
+    padding:16px 18px; overflow-x:auto; font-size:13px; line-height:1.6;
+  }
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+  .note{
+    border-left:3px solid var(--accent); padding:4px 16px; color:var(--sub); font-size:14px;
+    margin:20px 0;
+  }
+  footer{margin-top:72px; padding-top:24px; border-top:1px solid var(--line); color:var(--sub); font-size:13px;}
+  footer a{color:var(--sub);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="kicker">Proyecto personal · 3D scanning pipeline</p>
+    <h1>ScanForge</h1>
+    <p class="tagline">
+      Escanea un objeto real con el iPhone, reconstrúyelo en 3D en el Mac y deja la
+      malla lista para imprimir — sin retoques manuales.
+    </p>
+    <div class="flow">
+      <span class="step">iPhone · ios-capture</span>
+      <span class="arrow">→ fotos →</span>
+      <span class="step">Mac · mac-reconstruct</span>
+      <span class="arrow">→ OBJ/USDZ →</span>
+      <span class="step">Mac · mesh-prep</span>
+      <span class="arrow">→ 3MF/STL →</span>
+      <span class="step">Creality Print</span>
+    </div>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/fleremiasflemin20-maker/ScanForge">Ver el repositorio</a>
+      <a class="btn ghost" href="https://github.com/fleremiasflemin20-maker/ScanForge#primer-uso-en-tu-mac-mini">Cómo instalarlo</a>
+    </div>
+  </header>
+
+  <section>
+    <h2>Componentes</h2>
+    <div class="grid">
+
+      <div class="card">
+        <span class="badge warn">escrito, sin compilar</span>
+        <h3>ios-capture</h3>
+        <p>App SwiftUI (iOS 17+). Captura guiada con LiDAR (ObjectCaptureSession) en el
+        17 Pro, o modo manual con AVFoundation en iPhones sin LiDAR — se elige solo,
+        en tiempo de ejecución.</p>
+        <a href="https://github.com/fleremiasflemin20-maker/ScanForge/tree/main/ios-capture">Ver código →</a>
+      </div>
+
+      <div class="card">
+        <span class="badge warn">escrito, sin compilar</span>
+        <h3>mac-reconstruct</h3>
+        <p>CLI en Swift sobre <code>PhotogrammetrySession</code> (RealityKit). Fotos →
+        USDZ + OBJ, con nivel de detalle configurable y progreso en terminal.</p>
+        <a href="https://github.com/fleremiasflemin20-maker/ScanForge/tree/main/mac-reconstruct">Ver código →</a>
+      </div>
+
+      <div class="card">
+        <span class="badge ok">probado (pytest, 4/4)</span>
+        <h3>mesh-prep</h3>
+        <p>Pipeline en Python (pymeshlab + trimesh). Detecta y corta el plano de mesa,
+        genera base plana, repara la malla, escala a mm reales, decima y exporta
+        3MF/STL listo para imprimir, con un reporte de peso/volumen.</p>
+        <a href="https://github.com/fleremiasflemin20-maker/ScanForge/tree/main/mesh-prep">Ver código →</a>
+      </div>
+
+      <div class="card">
+        <span class="badge ok">protocolo probado</span>
+        <h3>scripts</h3>
+        <p>Orquestador end-to-end (<code>scanforge.sh</code>) y el receptor de subida
+        automática por red local desde el iPhone (<code>receive_uploads.py</code>).</p>
+        <a href="https://github.com/fleremiasflemin20-maker/ScanForge/tree/main/scripts">Ver código →</a>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>Arranque rápido</h2>
+    <pre><code># mac-reconstruct
+cd mac-reconstruct &amp;&amp; swift build -c release
+
+# mesh-prep
+cd mesh-prep &amp;&amp; python3 -m venv .venv &amp;&amp; source .venv/bin/activate
+pip install -e . &amp;&amp; pytest
+
+# ios-capture
+cd ios-capture &amp;&amp; xcodegen generate &amp;&amp; open ScanForge.xcodeproj
+
+# end-to-end
+./scripts/scanforge.sh --input &lt;carpeta-de-fotos&gt; --name mi-objeto --height-mm 150</code></pre>
+    <p class="note">
+      El Swift (iOS y macOS) se escribió desde un entorno sin Xcode: sigue la forma
+      real de las APIs de Apple, pero no se compiló todavía. El pipeline de Python sí
+      está probado de verdad. Detalles completos en el
+      <a href="https://github.com/fleremiasflemin20-maker/ScanForge#qué-falta-probar-de-verdad">README del repo</a>.
+    </p>
+  </section>
+
+  <footer>
+    <a href="https://github.com/fleremiasflemin20-maker/ScanForge">github.com/fleremiasflemin20-maker/ScanForge</a>
+  </footer>
+
+</div>
+</body>
+</html>

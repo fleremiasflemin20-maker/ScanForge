@@ -1,0 +1,36 @@
+name: ScanForge
+options:
+  bundleIdPrefix: com.scanforge
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: ""  # rellena con tu Team ID en Xcode (Signing & Capabilities)
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+
+targets:
+  ScanForge:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Sources
+    info:
+      path: Sources/Info.plist
+      properties:
+        UILaunchScreen: {}
+        NSCameraUsageDescription: "ScanForge necesita la cámara para capturar fotos del objeto a escanear."
+        NSLocalNetworkUsageDescription: "ScanForge busca tu Mac en la red local para subir las capturas automáticamente."
+        NSBonjourServices:
+          - "_scanforge._tcp"
+    entitlements:
+      path: Sources/ScanForge.entitlements
+      properties:
+        com.apple.security.network.client: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.scanforge.ScanForge
+        TARGETED_DEVICE_FAMILY: "1"

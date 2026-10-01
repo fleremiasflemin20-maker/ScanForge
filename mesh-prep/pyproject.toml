@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scanforge-mesh-prep"
+version = "0.1.0"
+description = "Pipeline que convierte una reconstrucción fotogramétrica en una malla lista para imprimir en 3D."
+requires-python = ">=3.11"
+dependencies = [
+    "trimesh>=4.4",
+    "pymeshlab>=2023.12",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "shapely>=2.0",
+    "mapbox_earcut>=1.0",
+    "rtree>=1.2",
+    "networkx>=3.2",
+]
+
+[project.scripts]
+mesh-prep = "mesh_prep.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["mesh_prep*"]
