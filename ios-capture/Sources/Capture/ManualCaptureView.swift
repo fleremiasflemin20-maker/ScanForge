@@ -66,18 +66,21 @@ struct ManualCaptureView: View {
     /// relativa del objeto debe apuntar la cámara en esta fase.
     private var heightGuideOverlay: some View {
         GeometryReader { proxy in
-            let y: CGFloat
-            switch controller.phase {
-            case .low: y = proxy.size.height * 0.75
-            case .mid: y = proxy.size.height * 0.5
-            case .high: y = proxy.size.height * 0.25
-            }
+            let y = proxy.size.height * guideFraction(for: controller.phase)
             Rectangle()
                 .fill(Color.yellow.opacity(0.9))
                 .frame(height: 2)
                 .position(x: proxy.size.width / 2, y: y)
         }
         .allowsHitTesting(false)
+    }
+
+    private func guideFraction(for phase: CapturePhase) -> CGFloat {
+        switch phase {
+        case .low: return 0.75
+        case .mid: return 0.5
+        case .high: return 0.25
+        }
     }
 
     private var guidanceCard: some View {

@@ -27,7 +27,7 @@ jobs:
       run:
         working-directory: ios-capture
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Seleccionar el Xcode más reciente
         run: |
@@ -54,8 +54,9 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            build | tee xcodebuild.log | grep -E "error:|warning: unre|BUILD (SUCCEEDED|FAILED)" || true
-          test -d build/Build/Products/Release-iphoneos/ScanForge.app
+            build > xcodebuild.log 2>&1 || true
+          grep -E "error:" xcodebuild.log | sort -u | head -100 || true
+          grep -q "BUILD SUCCEEDED" xcodebuild.log
 
       - name: Empaquetar IPA
         run: |
@@ -64,11 +65,7 @@ jobs:
           zip -qry ScanForge.ipa Payload
           ls -lh ScanForge.ipa
 
-      - name: Log de compilación (si falla)
-        if: failure()
-        run: grep -E "error:" -A3 xcodebuild.log | head -200 || true
-
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: ScanForge-ipa
           path: ios-capture/ScanForge.ipa

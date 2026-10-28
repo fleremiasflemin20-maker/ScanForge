@@ -38,7 +38,9 @@ final class MacUploader: NSObject, ObservableObject {
             guard let self, !didConnect, let first = results.first else { return }
             didConnect = true
             browser.cancel()
-            self.connect(to: first.endpoint, session: session)
+            MainActor.assumeIsolated {
+                self.connect(to: first.endpoint, session: session)
+            }
         }
 
         browser.start(queue: .main)
@@ -46,7 +48,7 @@ final class MacUploader: NSObject, ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
             guard let self, !didConnect else { return }
             browser.cancel()
-            self.state = .failed("No se encontró ningún Mac con ScanForge escuchando en la red local.")
+            MainActor.assumeIsolated { self.state = .failed("No se encontró ningún Mac con ScanForge escuchando en la red local.") }
         }
     }
 

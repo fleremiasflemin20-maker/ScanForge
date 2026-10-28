@@ -12,6 +12,7 @@ struct DeviceCapabilities {
     let trueDepth: Bool
     let reconstructOnDevice: Bool
 
+    @MainActor
     static func detect() -> DeviceCapabilities {
         let objectCapture: Bool
         let reconstruct: Bool
