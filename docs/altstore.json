@@ -1,0 +1,40 @@
+{
+  "name": "ScanForge",
+  "identifier": "com.scanforge.source",
+  "subtitle": "Escáner 3D Pro para iPhone",
+  "description": "Fuente oficial de ScanForge Pro para SideStore y AltStore.",
+  "iconURL": "https://raw.githubusercontent.com/fleremiasflemin20-maker/ScanForge/main/ios-capture/Sources/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+  "website": "https://fleremiasflemin20-maker.github.io/ScanForge/",
+  "tintColor": "#E07A42",
+  "apps": [
+    {
+      "name": "ScanForge Pro",
+      "bundleIdentifier": "com.scanforge.ScanForge",
+      "developerName": "ScanForge",
+      "subtitle": "LiDAR, TrueDepth y fotogrametría a escala real",
+      "localizedDescription": "Escáner 3D con los sensores del iPhone 17 Pro. Cuatro modos: Objeto Pro (Object Capture reconstruido en el iPhone), LiDAR Fusión (nube en tiempo real), Micro TrueDepth (luz estructurada infrarroja con seguimiento ICP) y Fotos 48 MP. Exporta STL/OBJ en milímetros listos para Bambu Studio y Creality Print.",
+      "iconURL": "https://raw.githubusercontent.com/fleremiasflemin20-maker/ScanForge/main/ios-capture/Sources/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+      "tintColor": "#E07A42",
+      "category": "utilities",
+      "versions": [
+        {
+          "version": "2.0.0",
+          "buildVersion": "2",
+          "date": "2026-10-28",
+          "localizedDescription": "Primera versión Pro: 4 modos de escaneo, reconstrucción en el iPhone, exportación STL en mm.",
+          "downloadURL": "https://github.com/fleremiasflemin20-maker/ScanForge/releases/download/v2.0.0/ScanForge.ipa",
+          "size": 373062,
+          "minOSVersion": "17.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {
+          "NSCameraUsageDescription": "ScanForge usa las cámaras, el LiDAR y la cámara TrueDepth para escanear objetos en 3D.",
+          "NSLocalNetworkUsageDescription": "ScanForge busca tu Mac en la red local para subir las capturas automáticamente."
+        }
+      }
+    }
+  ],
+  "news": []
+}
