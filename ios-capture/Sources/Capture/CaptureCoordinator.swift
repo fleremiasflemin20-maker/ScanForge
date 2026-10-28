@@ -1,49 +1,61 @@
+import ARKit
+import AVFoundation
 import Foundation
 import RealityKit
 import SwiftUI
 
-/// Decide en tiempo de ejecución si el dispositivo soporta la captura guiada con
-/// LiDAR (ObjectCaptureSession) o si hay que usar el modo manual con AVFoundation.
-/// El iPhone 17 Pro tiene LiDAR, así que normalmente se usará la ruta guiada, pero
-/// este chequeo permite que la misma app funcione en cualquier iPhone.
-enum CaptureMode {
-    case lidarGuided
-    case manual
+/// Qué sensores tiene este iPhone. Se decide en tiempo de ejecución, así la misma app
+/// funciona en el 17 Pro (todos los modos) y en iPhones sin LiDAR (solo fotos/TrueDepth).
+struct DeviceCapabilities {
+    let objectCapture: Bool
+    let lidarDepth: Bool
+    let trueDepth: Bool
+    let reconstructOnDevice: Bool
 
-    @available(iOS 17.0, *)
-    static func detect() -> CaptureMode {
-        ObjectCaptureSession.isSupported ? .lidarGuided : .manual
+    static func detect() -> DeviceCapabilities {
+        let objectCapture: Bool
+        let reconstruct: Bool
+        if #available(iOS 17.0, *) {
+            objectCapture = ObjectCaptureSession.isSupported
+            reconstruct = PhotogrammetrySession.isSupported
+        } else {
+            objectCapture = false
+            reconstruct = false
+        }
+        let lidar = ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth)
+        let trueDepth = AVCaptureDevice.default(.builtInTrueDepthCamera, for: .video, position: .front) != nil
+        return DeviceCapabilities(
+            objectCapture: objectCapture,
+            lidarDepth: lidar,
+            trueDepth: trueDepth,
+            reconstructOnDevice: reconstruct
+        )
+    }
+
+    func supports(_ mode: ScanMode) -> Bool {
+        switch mode {
+        case .objectCapture: return objectCapture
+        case .lidarFusion: return lidarDepth
+        case .trueDepthMicro: return trueDepth
+        case .manualPhotos: return true
+        }
     }
 }
 
 @MainActor
 final class CaptureCoordinator: ObservableObject {
     @Published var activeSession: CaptureSessionInfo?
-    @Published var isCapturing = false
 
-    let mode: CaptureMode
+    let capabilities = DeviceCapabilities.detect()
 
-    init() {
-        if #available(iOS 17.0, *) {
-            self.mode = CaptureMode.detect()
-        } else {
-            self.mode = .manual
-        }
-    }
-
-    func beginSession(objectName: String) -> CaptureSessionInfo {
+    func beginSession(objectName: String, mode: ScanMode) -> CaptureSessionInfo {
         let folder = CaptureStorage.newSessionFolder(objectName: objectName)
-        let info = CaptureSessionInfo(
-            objectName: objectName,
-            usedLiDAR: mode == .lidarGuided,
-            folderURL: folder
-        )
+        let info = CaptureSessionInfo(objectName: objectName, mode: mode, folderURL: folder)
         activeSession = info
-        isCapturing = true
         return info
     }
 
     func endSession() {
-        isCapturing = false
+        activeSession = nil
     }
 }

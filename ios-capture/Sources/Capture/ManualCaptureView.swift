@@ -120,7 +120,7 @@ struct ManualCaptureView: View {
 }
 
 /// Puente UIKit para mostrar el AVCaptureVideoPreviewLayer dentro de SwiftUI.
-private struct CameraPreview: UIViewRepresentable {
+struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
 
     func makeUIView(context: Context) -> PreviewUIView {
@@ -133,7 +133,7 @@ private struct CameraPreview: UIViewRepresentable {
     func updateUIView(_ uiView: PreviewUIView, context: Context) {}
 }
 
-private final class PreviewUIView: UIView {
+final class PreviewUIView: UIView {
     override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
     var videoPreviewLayer: AVCaptureVideoPreviewLayer {
         layer as! AVCaptureVideoPreviewLayer

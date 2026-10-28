@@ -2,38 +2,25 @@ import RealityKit
 import SwiftUI
 
 /// Envuelve `ObjectCaptureSession` + `ObjectCaptureView` (RealityKit, iOS 17+) para la
-/// captura guiada en dispositivos con LiDAR: Apple se encarga de la UI de guía
-/// (ángulos, "rodea el objeto", "dale la vuelta"), nosotros solo arrancamos la sesión
-/// y reaccionamos a su estado para saber cuándo terminó.
+/// captura guiada en dispositivos con LiDAR. Apple dibuja la guía (cúpula de cobertura,
+/// "acércate", "más luz"); nosotros llevamos el flujo de estados:
+/// ready → detecting (caja del objeto) → capturing → pasada completada → (girar) → finish.
 @available(iOS 17.0, *)
 struct LiDARCaptureView: View {
     let sessionInfo: CaptureSessionInfo
     let onFinished: (CaptureSessionInfo) -> Void
     let onCancelled: () -> Void
 
-    @StateObject private var captureSession = ObjectCaptureSession()
+    @State private var captureSession = ObjectCaptureSession()
+    @State private var stage: Stage = .initializing
+    @State private var passCompleted = false
+    @State private var passCount = 1
+    @State private var errorMessage: String?
 
-    /// Proyección del estado a un Int simple: evita depender de si `CaptureState`
-    /// conforma Equatable (tiene un caso `.failed(Error)` con asociado) para poder
-    /// usar `.onChange(of:)`.
-    private var stateTag: Int {
-        switch captureSession.state {
-        case .initializing: return 0
-        case .ready: return 1
-        case .detecting: return 2
-        case .capturing: return 3
-        case .finishing: return 4
-        case .completed: return 5
-        case .failed: return 6
-        @unknown default: return -1
-        }
-    }
-
-    private var showsReadyHint: Bool {
-        switch captureSession.state {
-        case .ready, .detecting: return true
-        default: return false
-        }
+    /// Copia simple del estado de la sesión: evita depender de si `CaptureState` es
+    /// Equatable (tiene `.failed(Error)`), y se actualiza desde `stateUpdates`.
+    private enum Stage {
+        case initializing, ready, detecting, capturing, finishing, completed, failed
     }
 
     var body: some View {
@@ -47,47 +34,155 @@ struct LiDARCaptureView: View {
                         captureSession.cancel()
                         onCancelled()
                     }
-                    .padding()
-                    .background(.black.opacity(0.6))
-                    .foregroundStyle(.white)
-                    .clipShape(Capsule())
-                    .padding()
+                    .buttonStyle(OverlayButtonStyle())
                     Spacer()
+                    if stage == .capturing {
+                        Text("Pasada \(passCount)")
+                            .font(.footnote.bold())
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(.black.opacity(0.6))
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                    }
                 }
+                .padding()
+
                 Spacer()
 
-                if showsReadyHint {
-                    Text("Encuadra el objeto y espera a que se detecte")
+                if let errorMessage {
+                    Text(errorMessage)
                         .padding(8)
-                        .background(.black.opacity(0.6))
+                        .background(.red.opacity(0.85))
                         .foregroundStyle(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .padding(.bottom, 40)
                 }
 
-                if captureSession.userCompletedScanPass {
-                    Button("Girar objeto y continuar") {
+                hint
+                controls
+                    .padding(.bottom, 32)
+            }
+        }
+        .task {
+            var configuration = ObjectCaptureSession.Configuration()
+            configuration.checkpointDirectory = sessionInfo.checkpointFolderURL
+            configuration.isOverCaptureEnabled = true
+            captureSession.start(imagesDirectory: sessionInfo.folderURL, configuration: configuration)
+        }
+        .task {
+            for await state in captureSession.stateUpdates {
+                apply(state)
+            }
+        }
+        .task {
+            for await completed in captureSession.userCompletedScanPassUpdates {
+                passCompleted = completed
+            }
+        }
+    }
+
+    private func apply(_ state: ObjectCaptureSession.CaptureState) {
+        switch state {
+        case .initializing: stage = .initializing
+        case .ready: stage = .ready
+        case .detecting: stage = .detecting
+        case .capturing: stage = .capturing
+        case .finishing: stage = .finishing
+        case .completed:
+            stage = .completed
+            onFinished(sessionInfo)
+        case .failed(let error):
+            stage = .failed
+            errorMessage = "La captura falló: \(error.localizedDescription)"
+        @unknown default:
+            break
+        }
+    }
+
+    @ViewBuilder
+    private var hint: some View {
+        let text: String? = {
+            switch stage {
+            case .initializing: return "Iniciando LiDAR…"
+            case .ready: return "Apunta al objeto con el punto central"
+            case .detecting: return "Ajusta la caja para que envuelva el objeto"
+            case .capturing where passCompleted:
+                return "Pasada completa. Gira el objeto para capturar la base, o termina."
+            case .capturing: return "Rodea el objeto despacio hasta completar la cúpula"
+            case .finishing: return "Guardando fotos…"
+            default: return nil
+            }
+        }()
+        if let text {
+            Text(text)
+                .font(.callout)
+                .multilineTextAlignment(.center)
+                .padding(10)
+                .background(.black.opacity(0.6))
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal)
+                .padding(.bottom, 12)
+        }
+    }
+
+    @ViewBuilder
+    private var controls: some View {
+        switch stage {
+        case .ready:
+            Button("Detectar objeto") {
+                _ = captureSession.startDetecting()
+            }
+            .buttonStyle(PrimaryCaptureButtonStyle())
+        case .detecting:
+            HStack(spacing: 16) {
+                Button("Reiniciar caja") { captureSession.resetDetection() }
+                    .buttonStyle(OverlayButtonStyle())
+                Button("Empezar captura") { captureSession.startCapturing() }
+                    .buttonStyle(PrimaryCaptureButtonStyle())
+            }
+        case .capturing:
+            HStack(spacing: 16) {
+                if passCompleted {
+                    Button("Girar y seguir") {
                         captureSession.beginNewScanPassAfterFlip()
+                        passCount += 1
+                        passCompleted = false
                     }
-                    .padding()
-                    .background(.white)
-                    .clipShape(Capsule())
-                    .padding(.bottom, 24)
+                    .buttonStyle(OverlayButtonStyle())
                 }
+                Button("Terminar") { captureSession.finish() }
+                    .buttonStyle(PrimaryCaptureButtonStyle())
             }
+        case .failed:
+            Button("Cerrar") { onCancelled() }
+                .buttonStyle(PrimaryCaptureButtonStyle())
+        default:
+            EmptyView()
         }
-        .onAppear {
-            captureSession.start(imagesDirectory: sessionInfo.folderURL)
-        }
-        .onChange(of: stateTag) { _, _ in
-            switch captureSession.state {
-            case .completed:
-                onFinished(sessionInfo)
-            case .failed:
-                onCancelled()
-            default:
-                break
-            }
-        }
+    }
+}
+
+struct OverlayButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.callout.weight(.semibold))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(.black.opacity(configuration.isPressed ? 0.8 : 0.6))
+            .foregroundStyle(.white)
+            .clipShape(Capsule())
+    }
+}
+
+struct PrimaryCaptureButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 14)
+            .background(Color.orange.opacity(configuration.isPressed ? 0.75 : 1))
+            .foregroundStyle(.black)
+            .clipShape(Capsule())
     }
 }

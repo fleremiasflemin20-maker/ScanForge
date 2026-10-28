@@ -48,6 +48,13 @@ final class ManualCaptureController: NSObject, ObservableObject {
         }
         if session.canAddOutput(photoOutput) {
             session.addOutput(photoOutput)
+            // Resolución completa del sensor (48 MP en el 17 Pro): más detalle para la
+            // fotogrametría, igual que las cámaras de textura de los escáneres dedicados.
+            if let largest = device.activeFormat.supportedMaxPhotoDimensions
+                .max(by: { $0.width * $0.height < $1.width * $1.height }) {
+                photoOutput.maxPhotoDimensions = largest
+            }
+            photoOutput.maxPhotoQualityPrioritization = .quality
         }
         session.commitConfiguration()
     }
@@ -73,8 +80,15 @@ final class ManualCaptureController: NSObject, ObservableObject {
     func capturePhoto() {
         guard let outputFolder else { return }
 
-        let settings = AVCapturePhotoSettings()
+        let settings: AVCapturePhotoSettings
+        if photoOutput.availablePhotoCodecTypes.contains(.hevc) {
+            settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.hevc])
+        } else {
+            settings = AVCapturePhotoSettings()
+        }
         settings.flashMode = .off
+        settings.maxPhotoDimensions = photoOutput.maxPhotoDimensions
+        settings.photoQualityPrioritization = .quality
 
         let currentIndex = totalPhotos
         let currentPhase = phase
@@ -94,7 +108,7 @@ final class ManualCaptureController: NSObject, ObservableObject {
         guard let pending = pendingCapture, let data else { return }
         pendingCapture = nil
 
-        let filename = String(format: "%@-%03d.jpg", pending.phase.fileTag, pending.index)
+        let filename = String(format: "%@-%03d.heic", pending.phase.fileTag, pending.index)
         let fileURL = pending.folder.appendingPathComponent(filename)
         do {
             try data.write(to: fileURL)
