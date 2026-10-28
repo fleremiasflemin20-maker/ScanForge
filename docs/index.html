@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ScanForge</title>
+<title>ScanForge Pro</title>
 <style>
   :root{
     --bg:#f7f6f3; --panel:#ffffff; --ink:#1b1b1f; --sub:#5b5b63;
@@ -76,6 +76,10 @@
     border-left:3px solid var(--accent); padding:4px 16px; color:var(--sub); font-size:14px;
     margin:20px 0;
   }
+  table{width:100%; border-collapse:collapse; font-size:14px;}
+  th,td{text-align:left; padding:10px 8px; border-bottom:1px solid var(--line); vertical-align:top;}
+  th{color:var(--sub); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.05em;}
+  .scroll{overflow-x:auto;}
   footer{margin-top:72px; padding-top:24px; border-top:1px solid var(--line); color:var(--sub); font-size:13px;}
   footer a{color:var(--sub);}
 </style>
@@ -84,88 +88,89 @@
 <div class="wrap">
 
   <header>
-    <p class="kicker">Proyecto personal · 3D scanning pipeline</p>
-    <h1>ScanForge</h1>
+    <p class="kicker">iPhone 17 Pro · escáner 3D</p>
+    <h1>ScanForge Pro</h1>
     <p class="tagline">
-      Escanea un objeto real con el iPhone, reconstrúyelo en 3D en el Mac y deja la
-      malla lista para imprimir — sin retoques manuales.
+      Las tecnologías de los escáneres de Creality, Revopoint, Artec y Bambu Lab, usando el
+      LiDAR, la cámara TrueDepth y la cámara de 48&nbsp;MP del iPhone. El STL sale a
+      escala real, listo para el slicer.
     </p>
     <div class="flow">
-      <span class="step">iPhone · ios-capture</span>
-      <span class="arrow">→ fotos →</span>
-      <span class="step">Mac · mac-reconstruct</span>
-      <span class="arrow">→ OBJ/USDZ →</span>
-      <span class="step">Mac · mesh-prep</span>
-      <span class="arrow">→ 3MF/STL →</span>
-      <span class="step">Creality Print</span>
+      <span class="step">Escanear en el iPhone</span>
+      <span class="arrow">→</span>
+      <span class="step">Reconstruir en el iPhone</span>
+      <span class="arrow">→ STL en mm →</span>
+      <span class="step">Bambu Studio · Creality Print</span>
     </div>
     <div class="cta">
-      <a class="btn primary" href="https://github.com/fleremiasflemin20-maker/ScanForge">Ver el repositorio</a>
-      <a class="btn ghost" href="https://github.com/fleremiasflemin20-maker/ScanForge#primer-uso-en-tu-mac-mini">Cómo instalarlo</a>
+      <a class="btn primary" href="https://github.com/fleremiasflemin20-maker/ScanForge/releases/latest">Descargar .ipa</a>
+      <a class="btn ghost" href="https://github.com/fleremiasflemin20-maker/ScanForge/blob/main/INSTALAR.md">Cómo instalar sin App Store</a>
+      <a class="btn ghost" href="https://github.com/fleremiasflemin20-maker/ScanForge">Repositorio</a>
     </div>
   </header>
 
   <section>
-    <h2>Componentes</h2>
+    <h2>Modos de escaneo</h2>
     <div class="grid">
-
       <div class="card">
-        <span class="badge warn">escrito, sin compilar</span>
-        <h3>ios-capture</h3>
-        <p>App SwiftUI (iOS 17+). Captura guiada con LiDAR (ObjectCaptureSession) en el
-        17 Pro, o modo manual con AVFoundation en iPhones sin LiDAR — se elige solo,
-        en tiempo de ejecución.</p>
-        <a href="https://github.com/fleremiasflemin20-maker/ScanForge/tree/main/ios-capture">Ver código →</a>
+        <span class="badge ok">Cámara 48 MP + LiDAR</span>
+        <h3>Objeto Pro</h3>
+        <p>Object Capture guiado con reconstrucción en el propio iPhone, como el MIRACO
+        (sin PC). Máximo detalle y textura. Genera USDZ, STL y OBJ.</p>
       </div>
-
       <div class="card">
-        <span class="badge warn">escrito, sin compilar</span>
-        <h3>mac-reconstruct</h3>
-        <p>CLI en Swift sobre <code>PhotogrammetrySession</code> (RealityKit). Fotos →
-        USDZ + OBJ, con nivel de detalle configurable y progreso en terminal.</p>
-        <a href="https://github.com/fleremiasflemin20-maker/ScanForge/tree/main/mac-reconstruct">Ver código →</a>
+        <span class="badge ok">LiDAR + ARKit</span>
+        <h3>LiDAR Fusión</h3>
+        <p>Nube de puntos en tiempo real con seguimiento visual-inercial y zona de escaneo.
+        Para piezas grandes, muebles y personas.</p>
       </div>
-
       <div class="card">
-        <span class="badge ok">probado (pytest, 4/4)</span>
-        <h3>mesh-prep</h3>
-        <p>Pipeline en Python (pymeshlab + trimesh). Detecta y corta el plano de mesa,
-        genera base plana, repara la malla, escala a mm reales, decima y exporta
-        3MF/STL listo para imprimir, con un reporte de peso/volumen.</p>
-        <a href="https://github.com/fleremiasflemin20-maker/ScanForge/tree/main/mesh-prep">Ver código →</a>
+        <span class="badge ok">Luz estructurada IR</span>
+        <h3>Micro TrueDepth</h3>
+        <p>El proyector de puntos infrarrojos con seguimiento ICP, el mismo principio que el
+        modo NIR de los escáneres de escritorio. Para piezas pequeñas en plataforma giratoria.</p>
       </div>
-
       <div class="card">
-        <span class="badge ok">protocolo probado</span>
-        <h3>scripts</h3>
-        <p>Orquestador end-to-end (<code>scanforge.sh</code>) y el receptor de subida
-        automática por red local desde el iPhone (<code>receive_uploads.py</code>).</p>
-        <a href="https://github.com/fleremiasflemin20-maker/ScanForge/tree/main/scripts">Ver código →</a>
+        <span class="badge warn">Para el Mac</span>
+        <h3>Fotos 48 MP</h3>
+        <p>Fotos HEIC a resolución completa para reconstruir con <code>mac-reconstruct</code>
+        al máximo nivel de detalle.</p>
       </div>
-
     </div>
   </section>
 
   <section>
-    <h2>Arranque rápido</h2>
-    <pre><code># mac-reconstruct
-cd mac-reconstruct &amp;&amp; swift build -c release
+    <h2>Instalar en el iPhone</h2>
+    <p>Sin App Store: descarga el <code>.ipa</code> de la última Release e instálalo con
+    <strong>Sideloadly</strong> desde Windows, o añade esta fuente en
+    <strong>SideStore / AltStore</strong> para recibir actualizaciones:</p>
+    <pre><code>https://fleremiasflemin20-maker.github.io/ScanForge/altstore.json</code></pre>
+    <p class="note">Con un Apple ID gratuito la firma dura 7 días: se renueva con un clic y
+    no se pierden los escaneos. Guía paso a paso en
+    <a href="https://github.com/fleremiasflemin20-maker/ScanForge/blob/main/INSTALAR.md">INSTALAR.md</a>.</p>
+  </section>
 
-# mesh-prep
-cd mesh-prep &amp;&amp; python3 -m venv .venv &amp;&amp; source .venv/bin/activate
-pip install -e . &amp;&amp; pytest
+  <section>
+    <h2>Lo que replica de los escáneres comerciales</h2>
+    <div class="scroll">
+    <table>
+      <tr><th>Tecnología</th><th>Escáneres</th><th>En ScanForge Pro</th></tr>
+      <tr><td>Luz estructurada NIR</td><td>Creality Raptor (modo NIR), Revopoint</td><td>TrueDepth + ICP punto-a-plano</td></tr>
+      <tr><td>Seguimiento híbrido sin marcadores</td><td>Artec, EinScan, Raptor</td><td>ARKit visual-inercial + LiDAR</td></tr>
+      <tr><td>Fusión en vóxeles en tiempo real</td><td>Todos</td><td>Rejilla hash con peso por confianza</td></tr>
+      <tr><td>Procesado sin PC</td><td>Revopoint MIRACO, Artec Leo</td><td>PhotogrammetrySession en el iPhone</td></tr>
+      <tr><td>Láser azul (≤0,02 mm)</td><td>Raptor Pro, MetroX</td><td><em>Sin equivalente en el iPhone</em></td></tr>
+    </table>
+    </div>
+    <p class="note">Investigación completa en
+    <a href="https://github.com/fleremiasflemin20-maker/ScanForge/blob/main/docs/TECNOLOGIA.md">docs/TECNOLOGIA.md</a>.</p>
+  </section>
 
-# ios-capture
-cd ios-capture &amp;&amp; xcodegen generate &amp;&amp; open ScanForge.xcodeproj
-
-# end-to-end
-./scripts/scanforge.sh --input &lt;carpeta-de-fotos&gt; --name mi-objeto --height-mm 150</code></pre>
-    <p class="note">
-      El Swift (iOS y macOS) se escribió desde un entorno sin Xcode: sigue la forma
-      real de las APIs de Apple, pero no se compiló todavía. El pipeline de Python sí
-      está probado de verdad. Detalles completos en el
-      <a href="https://github.com/fleremiasflemin20-maker/ScanForge#qué-falta-probar-de-verdad">README del repo</a>.
-    </p>
+  <section>
+    <h2>Estado</h2>
+    <p>La app compila en GitHub Actions con Xcode 26.3. <code>mesh-prep</code> pasa 5/5
+    tests, incluida la reconstrucción Poisson de nubes PLY. Falta la primera prueba en un
+    iPhone físico: los umbrales del seguimiento TrueDepth quizá necesiten ajustes.</p>
   </section>
 
   <footer>

@@ -1,71 +1,54 @@
-# ios-capture
+# ios-capture — ScanForge Pro
 
-App en SwiftUI (iOS 17+) para capturar las fotos que luego procesa `mac-reconstruct`.
-
-- **Con LiDAR** (tu iPhone 17 Pro, y cualquier Pro desde el 12 Pro): usa
-  `ObjectCaptureSession` + `ObjectCaptureView` (RealityKit) — Apple se encarga de la
-  UI de guía (detección del objeto, ángulos, aviso de "dale la vuelta").
-- **Sin LiDAR**: modo manual con AVFoundation — vista de cámara propia con una guía
-  visual de 3 alturas y contador de fotos (12 fotos sugeridas por altura, ~cada 30°).
-
-La detección es automática en tiempo de ejecución (`ObjectCaptureSession.isSupported`),
-así la misma app funciona igual en cualquier iPhone.
-
-## Abrir el proyecto
-
-Este repo no incluye un `.xcodeproj` (se generan con XcodeGen para no versionar XML
-binario-ish propenso a conflictos). En tu Mac:
-
-```bash
-brew install xcodegen
-cd ios-capture
-xcodegen generate
-open ScanForge.xcodeproj
-```
-
-En Xcode, en el target `ScanForge` → *Signing & Capabilities*, pon tu Team para poder
-instalar en el iPhone (los simuladores no tienen cámara ni LiDAR, hace falta dispositivo real).
+App SwiftUI (iOS 17+) con cuatro modos de escaneo. Ver la tabla de modos en el
+[README principal](../README.md) y cómo instalarla sin App Store en [INSTALAR.md](../INSTALAR.md).
 
 ## Estructura
 
 ```
 Sources/
-  ScanForgeApp.swift          punto de entrada
-  ContentView.swift           pantalla principal: nombre del objeto, iniciar captura, subir
+  ScanForgeApp.swift, ContentView.swift   inicio: nombre, selector de modo, historial
+  Models/CaptureSession.swift             ScanMode, sesión, carpetas
   Capture/
-    CaptureCoordinator.swift     decide LiDAR vs manual
-    LiDARCaptureView.swift       ObjectCaptureSession/ObjectCaptureView
-    ManualCaptureController.swift  AVFoundation: sesión de cámara, captura de fotos
-    ManualCaptureView.swift       UI del modo manual (guía de 3 alturas + contador)
-    CaptureExporter.swift         metadatos de la sesión (scanforge-session.json)
-  Networking/
-    MacUploader.swift          Fase 3: sube la carpeta al Mac por la red local
-  Models/
-    CaptureSession.swift       modelo de sesión + carpeta de almacenamiento
+    CaptureCoordinator.swift              detecta sensores (LiDAR, TrueDepth, Object Capture)
+    LiDARCaptureView.swift                Objeto Pro: ObjectCaptureSession guiado
+    ManualCaptureController/View.swift    Fotos 48 MP (HEIC, calidad máxima)
+    CaptureExporter.swift                 metadatos y listado de archivos
+  Fusion/
+    VoxelCloud.swift                      rejilla de vóxeles (fusión) + escritor PLY
+    LiDARFusionScanner/View.swift         LiDAR + ARKit: nube en tiempo real, zona de escaneo
+    TrueDepthScanner/ScanView.swift       luz estructurada IR + plataforma giratoria
+    ICPTracker.swift                      ICP punto-a-plano + RANSAC de plano
+    PointCloudPreview.swift               vista 3D en vivo (SceneKit)
+  Processing/OnDeviceReconstructor.swift  PhotogrammetrySession en el iPhone
+  Export/MeshExporter.swift               STL/OBJ en mm (Z arriba), malla LiDAR, USDZ→STL
+  Views/ResultView.swift                  resultado: reconstruir, ver, compartir, subir
+  Networking/MacUploader.swift            subida al Mac por Bonjour
 ```
 
-## Carpeta de salida
+## Compilar
 
-Cada sesión se guarda en `Documents/ScanForgeCaptures/<objeto>-<timestamp>/` dentro del
-sandbox de la app, con las fotos (y en modo LiDAR, profundidad/gravedad que escribe
-`ObjectCaptureSession` directamente) más un `scanforge-session.json` con metadatos.
-Esa carpeta es justo lo que espera `--input` en `mac-reconstruct`.
+- **Sin Mac:** cada push compila en GitHub Actions
+  ([`ios-build.yml`](../.github/workflows/ios-build.yml)) y deja `ScanForge.ipa` como
+  artefacto; un tag `v*` crea una Release.
+- **Con Mac:** `brew install xcodegen && xcodegen generate && open ScanForge.xcodeproj`
 
-Para sacarla del iPhone hoy: Files app → On My iPhone → ScanForge → AirDrop/Cable a tu
-Mac. La subida automática por red local (botón "Subir al Mac") es la Fase 3, y necesita
-el receptor `scripts/receive_uploads.py` corriendo en el Mac (ver `scripts/README.md`).
+## Carpeta de cada escaneo
 
-## Limitaciones / pendiente de probar en dispositivo
+`Documents/ScanForgeCaptures/<objeto>-<fecha>/` (visible en Archivos → En mi iPhone → ScanForge):
 
-Este código no se pudo compilar ni probar en este entorno (se escribió desde Windows,
-sin Xcode). Antes de confiar en él:
+- fotos HEIC (Objeto Pro / Fotos 48 MP) — es lo que espera `mac-reconstruct --input`
+- `Export/` — `*.usdz`, `*.stl`, `*.obj` (mm, Z arriba), `*-nube.ply` / `*-truedepth.ply`
+- `Checkpoints/` — caché interna de Object Capture (no se sube al Mac)
+- `scanforge-session.json` — metadatos
 
-1. Compílalo en Xcode y revisa los nombres exactos de la API de `ObjectCaptureSession`
-   / `ObjectCaptureView` contra la documentación de tu versión de Xcode — la forma
-   general (estado `.ready/.detecting/.capturing/.completed`, `start(imagesDirectory:)`,
-   `beginNewScanPassAfterFlip()`) es la de WWDC23 "Meet Object Capture for iOS", pero
-   Apple ha ajustado detalles entre versiones de iOS.
-2. Prueba el modo manual en un iPhone real (la vista previa de cámara y el flujo de
-   captura no se pueden probar en el simulador).
-3. La subida por red (`MacUploader`) asume un receptor Bonjour `_scanforge._tcp`
-   corriendo en el Mac; sin él, solo vas a ver "no se encontró ningún Mac".
+## Consejos de escaneo
+
+- **Objeto Pro:** luz difusa, fondo que contraste, 2–3 pasadas a distintas alturas y
+  «Girar y seguir» para capturar la base.
+- **LiDAR Fusión:** toca el objeto para fijar la zona y rodéalo a 30–60 cm. Las zonas
+  sin malla gris todavía no están cubiertas.
+- **Micro TrueDepth:** iPhone en un soporte con la pantalla hacia ti y el objeto en una
+  plataforma giratoria a 20–40 cm. Gira unos 20°/s. Si el borde de la vista de cámara
+  se pone rojo, el seguimiento se ha perdido: vuelve un poco atrás. Usa spray mate en
+  piezas brillantes o negras.

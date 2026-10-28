@@ -7,6 +7,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import numpy as np
 import trimesh
 
 
@@ -21,12 +22,73 @@ def load_mesh(path: Path) -> trimesh.Trimesh:
         raise MeshLoadError(f"No existe el archivo de entrada: {path}")
 
     suffix = path.suffix.lower()
-    if suffix == ".obj":
+    if suffix in (".obj", ".stl"):
         return _load_obj(path)
+    if suffix == ".ply":
+        return _load_ply(path)
     if suffix == ".usdz":
         obj_path = _convert_usdz_to_obj(path)
         return _load_obj(obj_path)
-    raise MeshLoadError(f"Formato de entrada no soportado: {suffix} (usa .obj o .usdz)")
+    raise MeshLoadError(f"Formato de entrada no soportado: {suffix} (usa .obj, .stl, .ply o .usdz)")
+
+
+def _load_ply(path: Path) -> trimesh.Trimesh:
+    """Un PLY con caras se carga tal cual; uno sin caras es una nube de puntos de
+    ScanForge Pro (modos LiDAR Fusión / Micro TrueDepth) y se malla con Poisson."""
+    loaded = trimesh.load(str(path), process=False)
+    if isinstance(loaded, trimesh.Trimesh) and len(loaded.faces) > 0:
+        return loaded
+    points = np.asarray(getattr(loaded, "vertices", []), dtype=np.float64)
+    if len(points) < 100:
+        raise MeshLoadError(f"La nube de puntos tiene muy pocos puntos ({len(points)}): {path}")
+    normals = _ply_normals(path, len(points))
+    return poisson_from_points(points, normals)
+
+
+def _ply_normals(path: Path, count: int) -> np.ndarray | None:
+    """Lee nx/ny/nz del PLY con pymeshlab (trimesh no los expone para nubes de puntos)."""
+    import pymeshlab
+
+    try:
+        ms = pymeshlab.MeshSet()
+        ms.load_new_mesh(str(path))
+        normals = np.asarray(ms.current_mesh().vertex_normal_matrix(), dtype=np.float64)
+    except Exception:
+        return None
+    if normals.shape != (count, 3) or not np.any(normals):
+        return None
+    return normals
+
+
+def poisson_from_points(points: np.ndarray, normals: np.ndarray | None, depth: int = 9) -> trimesh.Trimesh:
+    """Reconstrucción de Poisson (screened) de una nube de puntos orientada.
+
+    Poisson siempre produce una superficie cerrada, también donde no hubo datos
+    (debajo del objeto, huecos). Se recortan las caras alejadas de la nube original
+    más de ~3 veces la separación típica entre puntos, para no inventar geometría."""
+    import pymeshlab
+    from scipy.spatial import cKDTree
+
+    ms = pymeshlab.MeshSet()
+    if normals is not None:
+        ms.add_mesh(pymeshlab.Mesh(vertex_matrix=points, v_normals_matrix=normals))
+    else:
+        ms.add_mesh(pymeshlab.Mesh(vertex_matrix=points))
+        ms.compute_normal_for_point_clouds(k=12, smoothiter=2)
+    ms.generate_surface_reconstruction_screened_poisson(depth=depth, preclean=True)
+    m = ms.current_mesh()
+    mesh = trimesh.Trimesh(vertices=m.vertex_matrix(), faces=m.face_matrix(), process=True)
+
+    tree = cKDTree(points)
+    spacing = float(np.median(tree.query(points, k=2)[0][:, 1]))
+    distances, _ = tree.query(mesh.vertices)
+    keep_vertex = distances <= max(spacing * 3.0, 1e-9)
+    keep_face = keep_vertex[mesh.faces].all(axis=1)
+    mesh.update_faces(keep_face)
+    mesh.remove_unreferenced_vertices()
+    if len(mesh.faces) == 0:
+        raise MeshLoadError("Poisson no generó caras útiles a partir de la nube de puntos.")
+    return mesh
 
 
 def _load_obj(path: Path) -> trimesh.Trimesh:

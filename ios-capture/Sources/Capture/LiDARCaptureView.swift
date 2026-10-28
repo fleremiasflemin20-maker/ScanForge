@@ -11,7 +11,8 @@ struct LiDARCaptureView: View {
     let onFinished: (CaptureSessionInfo) -> Void
     let onCancelled: () -> Void
 
-    @State private var captureSession = ObjectCaptureSession()
+    /// Se crea una sola vez en `.task` (no en el init de la vista, que SwiftUI repite).
+    @State private var captureSession: ObjectCaptureSession?
     @State private var stage: Stage = .initializing
     @State private var passCompleted = false
     @State private var passCount = 1
@@ -25,13 +26,17 @@ struct LiDARCaptureView: View {
 
     var body: some View {
         ZStack {
-            ObjectCaptureView(session: captureSession)
-                .ignoresSafeArea()
+            if let captureSession {
+                ObjectCaptureView(session: captureSession)
+                    .ignoresSafeArea()
+            } else {
+                Color.black.ignoresSafeArea()
+            }
 
             VStack {
                 HStack {
                     Button("Cancelar") {
-                        captureSession.cancel()
+                        captureSession?.cancel()
                         onCancelled()
                     }
                     .buttonStyle(OverlayButtonStyle())
@@ -64,19 +69,21 @@ struct LiDARCaptureView: View {
             }
         }
         .task {
+            guard captureSession == nil else { return }
+            let session = ObjectCaptureSession()
+            captureSession = session
             var configuration = ObjectCaptureSession.Configuration()
             configuration.checkpointDirectory = sessionInfo.checkpointFolderURL
             configuration.isOverCaptureEnabled = true
-            captureSession.start(imagesDirectory: sessionInfo.folderURL, configuration: configuration)
-        }
-        .task {
-            for await state in captureSession.stateUpdates {
-                apply(state)
-            }
-        }
-        .task {
-            for await completed in captureSession.userCompletedScanPassUpdates {
-                passCompleted = completed
+            session.start(imagesDirectory: sessionInfo.folderURL, configuration: configuration)
+
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { @MainActor in
+                    for await state in session.stateUpdates { apply(state) }
+                }
+                group.addTask { @MainActor in
+                    for await completed in session.userCompletedScanPassUpdates { passCompleted = completed }
+                }
             }
         }
     }
@@ -131,27 +138,27 @@ struct LiDARCaptureView: View {
         switch stage {
         case .ready:
             Button("Detectar objeto") {
-                _ = captureSession.startDetecting()
+                _ = captureSession?.startDetecting()
             }
             .buttonStyle(PrimaryCaptureButtonStyle())
         case .detecting:
             HStack(spacing: 16) {
-                Button("Reiniciar caja") { captureSession.resetDetection() }
+                Button("Reiniciar caja") { captureSession?.resetDetection() }
                     .buttonStyle(OverlayButtonStyle())
-                Button("Empezar captura") { captureSession.startCapturing() }
+                Button("Empezar captura") { captureSession?.startCapturing() }
                     .buttonStyle(PrimaryCaptureButtonStyle())
             }
         case .capturing:
             HStack(spacing: 16) {
                 if passCompleted {
                     Button("Girar y seguir") {
-                        captureSession.beginNewScanPassAfterFlip()
+                        captureSession?.beginNewScanPassAfterFlip()
                         passCount += 1
                         passCompleted = false
                     }
                     .buttonStyle(OverlayButtonStyle())
                 }
-                Button("Terminar") { captureSession.finish() }
+                Button("Terminar") { captureSession?.finish() }
                     .buttonStyle(PrimaryCaptureButtonStyle())
             }
         case .failed:

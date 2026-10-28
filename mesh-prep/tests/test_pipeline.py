@@ -82,3 +82,34 @@ def test_scale_requires_exactly_one_dimension_option(object_on_table_obj: Path, 
     )
     with pytest.raises(Exception):
         run_pipeline(options, log=lambda *_: None)
+
+
+def test_pipeline_accepts_point_cloud_ply(tmp_path: Path):
+    """Nube de puntos con normales (como la exporta ScanForge Pro) -> Poisson -> pieza imprimible."""
+    import numpy as np
+    import trimesh
+
+    sphere = trimesh.creation.icosphere(subdivisions=5, radius=30.0)
+    points, face_idx = trimesh.sample.sample_surface_even(sphere, 6000, seed=1)
+    normals = sphere.face_normals[face_idx]
+    cloud = tmp_path / "nube.ply"
+    header = (
+        "ply\nformat ascii 1.0\n"
+        f"element vertex {len(points)}\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "property float nx\nproperty float ny\nproperty float nz\n"
+        "end_header\n"
+    )
+    body = "\n".join(" ".join(f"{v:.5f}" for v in (*p, *n)) for p, n in zip(points, normals))
+    cloud.write_text(header + body + "\n")
+
+    options = PipelineOptions(
+        input_path=cloud,
+        output_dir=tmp_path / "out",
+        target_triangles=5_000,
+        scale=1.0,  # ScanForge Pro ya exporta en mm reales
+        skip_plane_removal=True,
+    )
+    result = run_pipeline(options, log=lambda *_: None)
+    assert result["triangle_count"] > 500
+    assert result["dimensions_mm"]["z"] == pytest.approx(60.0, rel=0.08)
