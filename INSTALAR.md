@@ -10,7 +10,7 @@ de estos tres caminos.
 |---|---|---|---|
 | **A. Sideloadly** (Windows/Mac) | PC + cable + Apple ID gratis | 7 días (reinstalar con 1 clic) | Es la forma más rápida desde tu PC con Windows |
 | **B. SideStore / AltStore** | PC solo la primera vez | 7 días, se renueva **desde el iPhone** | Quieres actualizar y renovar sin cable |
-| **C. Xcode** (Mac) | Mac + Xcode | 7 días gratis / 1 año con cuenta de desarrollador (99 USD) | Vas a modificar el código |
+| **C. Xcode** (Mac Mini) | Mac + Xcode | 7 días gratis / 1 año con cuenta de desarrollador (99 USD) | **Tienes Mac: es lo más fácil** |
 
 > Con un Apple ID gratuito Apple limita las apps instaladas así a **7 días** y 3 apps a la
 > vez. Al caducar, la app no se borra ni pierdes tus escaneos: basta con volver a
@@ -52,16 +52,52 @@ Para renovarla a los 7 días, repite el paso 5. Tus escaneos se mantienen.
    versión nueva aparecerá como actualización.
 4. Activa el **Modo de desarrollador** como en el paso A.6.
 
-## C. Xcode en tu Mac
+## C. Xcode en tu Mac Mini (recomendado si tienes Mac)
 
-```bash
-brew install xcodegen
-cd ios-capture
-xcodegen generate
-open ScanForge.xcodeproj
-```
+No necesitas Sideloadly ni iTunes: Xcode instala la app directamente, y al conectar el
+iPhone a Xcode aparece solo el **Modo de desarrollador**.
 
-En *Signing & Capabilities* elige tu Team y pulsa **Run** con el iPhone conectado.
+1. **Instala Xcode** desde la App Store del Mac. Ábrelo una vez y acepta los componentes
+   adicionales.
+2. **Instala Homebrew, XcodeGen y git.** Abre Terminal (Cmd + Espacio → *Terminal*):
+
+   ```bash
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   ```
+
+   Ejecuta las líneas que te muestra en *Next steps* y luego:
+
+   ```bash
+   brew install xcodegen git
+   ```
+
+3. **Descarga el repo y abre el proyecto:**
+
+   ```bash
+   cd ~/Desktop && git clone https://github.com/fleremiasflemin20-maker/ScanForge.git && cd ScanForge/ios-capture && xcodegen generate && open ScanForge.xcodeproj
+   ```
+
+4. **Pon tu Apple ID en Xcode:** Xcode → Settings → Accounts → **+** → Apple ID.
+5. **Firma la app:** en la columna izquierda clic en **ScanForge** (icono azul) →
+   pestaña **Signing & Capabilities** → marca *Automatically manage signing* → en
+   **Team** elige tu *Personal Team*. Si sale un error con el *Bundle Identifier*,
+   cámbialo por uno único, por ejemplo `com.tunombre.scanforge`.
+6. **Instala en el iPhone:**
+   - Conecta el iPhone por cable, desbloquéalo y pulsa **Confiar**.
+   - Arriba en Xcode elige **tu iPhone** como destino y pulsa **▶ (Run)**.
+   - En el iPhone: **Ajustes → Privacidad y seguridad → Modo de desarrollador** →
+     actívalo → reinicia → **Activar**.
+   - Pulsa **▶** otra vez en Xcode.
+   - Si dice que el desarrollador no es de confianza: **Ajustes → General → VPN y
+     gestión de dispositivos →** tu correo → **Confiar**.
+
+Con Apple ID gratuito dura 7 días: para renovarla, conecta el iPhone y pulsa ▶ de nuevo.
+Para recibir cambios nuevos del repo: `cd ~/Desktop/ScanForge && git pull && cd ios-capture && xcodegen generate`.
+
+> **¿No encuentras el Modo de desarrollador?** Está oculto hasta que instalas una app
+> con Xcode o Sideloadly. Instala primero y vuelve a mirar en *Privacidad y seguridad*.
+> No lo confundas con el **Modo de aislamiento** (Lockdown Mode): ese debe seguir
+> desactivado.
 
 ---
 
