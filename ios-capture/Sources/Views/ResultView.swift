@@ -46,6 +46,35 @@ struct ResultView: View {
                 Text("Mide con un calibre el lado más largo de la pieza: el Mac corrige la escala con esa medida (la mayor fuente de error). «Pieza mecánica» deja las caras planas exactas y las aristas vivas, sin redondear ranuras ni encajes. Se aplica al procesar en el Mac.")
             }
 
+            Section {
+                Picker("Dividir", selection: Binding(
+                    get: { options.partsBy ?? "none" },
+                    set: { options.partsBy = $0 == "none" ? nil : $0 }
+                )) {
+                    Text("No dividir").tag("none")
+                    Text("Por forma (anatomía)").tag("shape")
+                    Text("Por colores").tag("color")
+                }
+                if options.partsBy == "color" {
+                    Stepper("Colores / filamentos: \(options.partsColors)", value: $options.partsColors, in: 2...16)
+                }
+                if options.partsBy == "shape" {
+                    Picker("Encaje", selection: $options.connector) {
+                        Text("Pivote hexagonal").tag("pivote")
+                        Text("Espiga suelta").tag("espiga")
+                        Text("Sin encaje").tag("ninguno")
+                    }
+                    if options.connector != "ninguno" {
+                        Stepper(String(format: "Holgura: %.2f mm", options.clearanceMM),
+                                value: $options.clearanceMM, in: 0.05...0.5, step: 0.05)
+                    }
+                }
+            } header: {
+                Text("Dividir en partes")
+            } footer: {
+                Text(partsFooter)
+            }
+
             Section("Modelos") {
                 if files.isEmpty {
                     Text(session.mode == .manualPhotos
@@ -106,6 +135,17 @@ struct ResultView: View {
         }
         .onChange(of: options) { _, newValue in
             CaptureExporter.saveOptions(newValue, for: session)
+        }
+    }
+
+    private var partsFooter: String {
+        switch options.partsBy {
+        case "shape":
+            return "Corta por las uniones (cuello, hombros, muñecas…) con planos perfectos. El pivote hexagonal no gira y lleva punta achaflanada; la holgura de 0,2 mm suele ir bien en PLA. Se aplica al procesar en el Mac."
+        case "color":
+            return "Separa la pieza por zonas de color (pelo, piel, ojos, ropa…) para imprimirla en multicolor con el AMS: las partes salen montadas en un 3MF y en Bambu Studio asignas un filamento a cada una."
+        default:
+            return "Divide la figura en partes imprimibles que encajan, por anatomía o por colores."
         }
     }
 

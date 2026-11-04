@@ -137,6 +137,10 @@ def process_session(session_dir: Path, workdir: Path, detail: str, open_app: str
         cmd.append("--mechanical")
     if options.get("longestMM"):
         cmd += ["--longest-mm", str(float(options["longestMM"]))]
+    if options.get("partsBy") in ("shape", "color"):
+        cmd += ["--parts", options["partsBy"], "--parts-colors", str(int(options.get("partsColors", 4))),
+                "--connector", options.get("connector", "pivote"),
+                "--clearance", str(float(options.get("clearanceMM", 0.2)))]
 
     print(f"[auto] Procesando {name} (log: {log_path})")
     with open(log_path, "w", encoding="utf-8") as log:
