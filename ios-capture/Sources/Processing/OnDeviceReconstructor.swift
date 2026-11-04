@@ -21,7 +21,15 @@ final class OnDeviceReconstructor: ObservableObject {
         return false
     }
 
+    /// Primer intento en sensibilidad normal; si falla (piezas lisas, de un color, con
+    /// poca textura) se reintenta en `.high`, que busca más puntos característicos.
     func reconstruct(_ session: CaptureSessionInfo, completion: @escaping () -> Void) {
+        reconstruct(session, sensitivity: .normal, completion: completion)
+    }
+
+    private func reconstruct(_ session: CaptureSessionInfo,
+                             sensitivity: PhotogrammetrySession.Configuration.FeatureSensitivity,
+                             completion: @escaping () -> Void) {
         guard #available(iOS 17.0, *) else {
             state = .failed("Necesita iOS 17 o superior.")
             return
@@ -40,7 +48,7 @@ final class OnDeviceReconstructor: ObservableObject {
             do {
                 var configuration = PhotogrammetrySession.Configuration()
                 configuration.checkpointDirectory = session.checkpointFolderURL
-                configuration.featureSensitivity = .normal
+                configuration.featureSensitivity = sensitivity
                 configuration.sampleOrdering = .sequential
                 let photogrammetry = try PhotogrammetrySession(input: session.folderURL, configuration: configuration)
                 try photogrammetry.process(requests: [.modelFile(url: modelURL)])
@@ -50,6 +58,11 @@ final class OnDeviceReconstructor: ObservableObject {
                     case .requestProgress(_, let fraction):
                         state = .running(progress: fraction)
                     case .requestError(_, let error):
+                        if sensitivity == .normal {
+                            photogrammetry.cancel()
+                            reconstruct(session, sensitivity: .high, completion: completion)
+                            return
+                        }
                         state = .failed("Error en la reconstrucción: \(error.localizedDescription)")
                     case .processingComplete:
                         if case .failed = state { break }
@@ -57,6 +70,7 @@ final class OnDeviceReconstructor: ObservableObject {
                         state = .finished
                         completion()
                     case .processingCancelled:
+                        if case .running = state, sensitivity == .normal { break }
                         state = .idle
                     default:
                         break

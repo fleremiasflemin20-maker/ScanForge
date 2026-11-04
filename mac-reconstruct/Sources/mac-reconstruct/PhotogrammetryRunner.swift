@@ -8,6 +8,7 @@ enum ReconstructError: Error, CustomStringConvertible {
     case sessionCreationFailed(underlying: Error)
     case processingFailed(underlying: Error)
     case noOutputsProduced
+    case stalled(minutes: Int)
 
     var description: String {
         switch self {
@@ -19,6 +20,8 @@ enum ReconstructError: Error, CustomStringConvertible {
             return "La reconstrucción falló: \(underlying.localizedDescription)"
         case .noOutputsProduced:
             return "La sesión terminó sin producir ningún archivo de salida."
+        case .stalled(let minutes):
+            return "La reconstrucción no avanzó en \(minutes) min y se canceló. Suele pasar con pocas fotos (<30), poca luz o poco solape: repite la captura con más fotos y mejor luz."
         }
     }
 }
@@ -30,6 +33,8 @@ final class PhotogrammetryRunner {
     private let detail: PhotogrammetrySession.Request.Detail
     private let featureSensitivity: PhotogrammetrySession.Configuration.FeatureSensitivity
     private let objectMaskingEnabled: Bool
+    private let visionMasks: Bool
+    private let posesURL: URL?
     private let progress = ProgressReporter()
     private var startedLabels: Set<String> = []
 
@@ -38,8 +43,12 @@ final class PhotogrammetryRunner {
         outputDirectory: URL,
         detail: PhotogrammetrySession.Request.Detail,
         featureSensitivity: PhotogrammetrySession.Configuration.FeatureSensitivity,
-        objectMaskingEnabled: Bool
+        objectMaskingEnabled: Bool,
+        visionMasks: Bool = false,
+        posesURL: URL? = nil
     ) {
+        self.visionMasks = visionMasks
+        self.posesURL = posesURL
         self.input = input
         self.outputDirectory = outputDirectory
         self.detail = detail
@@ -58,25 +67,58 @@ final class PhotogrammetryRunner {
         configuration.sampleOrdering = .unordered
 
         let session: PhotogrammetrySession
+        var sampleNames: [Int: String] = [:]
         do {
-            session = try PhotogrammetrySession(input: input, configuration: configuration)
+            if visionMasks, #available(macOS 15.0, *) {
+                let urls = try imageURLs()
+                for (i, url) in urls.enumerated() { sampleNames[i] = url.lastPathComponent }
+                print("Máscaras de objeto (Vision) para \(urls.count) fotos")
+                session = try PhotogrammetrySession(input: MaskedSampleSequence(urls: urls), configuration: configuration)
+            } else {
+                session = try PhotogrammetrySession(input: input, configuration: configuration)
+            }
         } catch {
             throw ReconstructError.sessionCreationFailed(underlying: error)
         }
 
         let usdzURL = outputDirectory.appendingPathComponent("model.usdz")
-        let objURL = outputDirectory.appendingPathComponent("model.obj")
+        // Para OBJ, PhotogrammetrySession exige una carpeta (escribe OBJ + MTL + texturas);
+        // con una ruta "model.obj" falla con invalidOutput.
+        let objURL = outputDirectory.appendingPathComponent("model-obj", isDirectory: true)
+        try FileManager.default.createDirectory(at: objURL, withIntermediateDirectories: true)
 
-        let requests: [PhotogrammetrySession.Request] = [
+        var requests: [PhotogrammetrySession.Request] = [
             .modelFile(url: usdzURL, detail: detail),
             .modelFile(url: objURL, detail: detail)
         ]
+        if posesURL != nil { requests.append(.poses) }
 
         var producedAny = false
         var caughtError: Error?
 
+        // Vigilancia: con fotos insuficientes PhotogrammetrySession a veces se queda
+        // esperando para siempre sin dar error. Si no hay ninguna señal en
+        // `stallMinutes`, se cancela con un mensaje útil.
+        let stallMinutes = Int(ProcessInfo.processInfo.environment["SCANFORGE_STALL_MINUTES"] ?? "") ?? 10
+        let lastEvent = LastEvent()
+        let watchdog = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(15))
+                if lastEvent.secondsSince() > Double(stallMinutes * 60) {
+                    // `cancel()` no siempre cierra `outputs` cuando la sesión está
+                    // atascada, así que se termina el proceso con el motivo.
+                    session.cancel()
+                    let message = "\nError: \(ReconstructError.stalled(minutes: stallMinutes))\n"
+                    FileHandle.standardError.write(Data(message.utf8))
+                    exit(3)
+                }
+            }
+        }
+        defer { watchdog.cancel() }
+
         let consumerTask = Task {
             for try await output in session.outputs {
+                lastEvent.touch()
                 switch output {
                 case .processingComplete:
                     progress.finishLine()
@@ -100,6 +142,15 @@ final class PhotogrammetryRunner {
                     case .modelFile(let url):
                         progress.info("✓ Generado: \(url.lastPathComponent)")
                         producedAny = true
+                    case .poses(let poses):
+                        if let posesURL {
+                            do {
+                                try PoseWriter.write(poses, names: sampleNames, to: posesURL)
+                                progress.info("✓ Poses de \(poses.posesBySample.count) cámaras: \(posesURL.lastPathComponent)")
+                            } catch {
+                                progress.warn("No se pudieron guardar las poses: \(error.localizedDescription)")
+                            }
+                        }
                     @unknown default:
                         progress.info("✓ Solicitud completada: \(describe(request))")
                         producedAny = true
@@ -155,12 +206,35 @@ final class PhotogrammetryRunner {
         print("\nListo. Archivos en: \(outputDirectory.path)")
     }
 
+    private func imageURLs() throws -> [URL] {
+        let extensions: Set<String> = ["heic", "heif", "jpg", "jpeg", "png"]
+        return try FileManager.default.contentsOfDirectory(at: input, includingPropertiesForKeys: nil)
+            .filter { extensions.contains($0.pathExtension.lowercased()) && !$0.deletingPathExtension().lastPathComponent.hasSuffix("_mask") }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
     private func describe(_ request: PhotogrammetrySession.Request) -> String {
         switch request {
-        case .modelFile(let url, _):
+        case .modelFile(let url, _, _):
             return url.lastPathComponent
         @unknown default:
             return "solicitud"
         }
+    }
+}
+
+
+/// Marca de tiempo compartida entre el consumidor de salidas y la vigilancia.
+final class LastEvent: @unchecked Sendable {
+    private let lock = NSLock()
+    private var date = Date()
+
+    func touch() {
+        lock.lock(); date = Date(); lock.unlock()
+    }
+
+    func secondsSince() -> Double {
+        lock.lock(); defer { lock.unlock() }
+        return Date().timeIntervalSince(date)
     }
 }

@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import RealityKit
 
-@available(macOS 14.0, *)
+@main
 struct ScanForgeReconstruct: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "mac-reconstruct",
@@ -16,7 +16,7 @@ struct ScanForgeReconstruct: AsyncParsableCommand {
     @Option(name: .long, help: "Carpeta con las imágenes de entrada.")
     var input: String
 
-    @Option(name: .long, help: "Carpeta de salida donde se escriben model.usdz y model.obj.")
+    @Option(name: .long, help: "Carpeta de salida: model.usdz y model-obj/ (OBJ con texturas).")
     var output: String
 
     @Option(name: .long, help: "Nivel de detalle: preview, reduced, medium, full, raw.")
@@ -28,7 +28,13 @@ struct ScanForgeReconstruct: AsyncParsableCommand {
     @Flag(name: .long, help: "Activa el enmascarado de objeto (usa máscaras *_mask.HEIC junto a cada imagen si existen).")
     var objectMasking: Bool = false
 
-    func run() async throws {
+    @Flag(name: .long, help: "Genera con Vision una máscara de la pieza en cada foto (plato giratorio con fondo estático).")
+    var masks: Bool = false
+
+    @Option(name: .long, help: "Guardar las poses de cámara en este JSON (para la escala con tablero ChArUco).")
+    var poses: String?
+
+    mutating func run() async throws {
         let inputURL = URL(fileURLWithPath: input, isDirectory: true)
         let outputDir = URL(fileURLWithPath: output, isDirectory: true)
 
@@ -43,7 +49,7 @@ struct ScanForgeReconstruct: AsyncParsableCommand {
         print("  salida:    \(outputDir.path)")
         print("  detalle:   \(detail.rawValue)")
         print("  features:  \(featureSensitivity.rawValue)")
-        print("  masking:   \(objectMasking ? "activado" : "desactivado")")
+        print("  masking:   \(objectMasking ? "activado" : "desactivado")\(masks ? " + máscaras Vision" : "")")
         print("")
 
         if imageCount < 10 {
@@ -55,7 +61,9 @@ struct ScanForgeReconstruct: AsyncParsableCommand {
             outputDirectory: outputDir,
             detail: detail.sessionDetail,
             featureSensitivity: featureSensitivity.sessionValue,
-            objectMaskingEnabled: objectMasking
+            objectMaskingEnabled: objectMasking,
+            visionMasks: masks,
+            posesURL: poses.map { URL(fileURLWithPath: $0) }
         )
 
         try await runner.run()

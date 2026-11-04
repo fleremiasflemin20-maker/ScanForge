@@ -1,5 +1,6 @@
-"""Orquesta el pipeline completo: carga -> limpieza -> corte de mesa -> base plana ->
-reparación -> escala -> decimado -> centrado -> export -> reporte."""
+"""Orquesta el pipeline completo: carga -> orientación -> limpieza -> [suavizado] ->
+corte de mesa -> base plana -> completado (simetría + Poisson) -> escala -> centrado ->
+decimado -> export -> reporte."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -9,7 +10,7 @@ from typing import Callable
 import numpy as np
 import trimesh
 
-from . import cleanup, decimate, io, orientation, plane_removal, report, scaling
+from . import cleanup, completion, decimate, io, mechanical, orientation, plane_removal, report, scaling
 
 Logger = Callable[[str], None]
 
@@ -28,16 +29,43 @@ class PipelineOptions:
     density_g_cm3: float = report.PLA_DENSITY_G_CM3
     skip_plane_removal: bool = False
     max_hole_size: int = 500
+    # "y" para OBJ/USDZ de RealityKit (Y arriba); "z" para lo que exporta la app (Z arriba).
+    up_axis: str = "z"
+    # Completa las zonas sin escanear y cierra la malla (Poisson con transferencia de detalle).
+    complete: bool = True
+    # "auto": usa la simetría solo si la pieza es claramente simétrica; "off": nunca.
+    symmetry: str = "auto"
+    denoise: bool = False
+    # Pieza técnica: aplana caras planas a su plano exacto (ranuras, encajes, bridas).
+    mechanical: bool = False
+    # Medida real más larga de la pieza (calibre), corrige la escala del escaneo.
+    longest_mm: float | None = None
+    # charuco-transform.json: lleva la reconstrucción a mm reales con el tablero en Z=0.
+    transform_path: Path | None = None
 
 
 def run_pipeline(options: PipelineOptions, log: Logger = print) -> dict:
     log(f"[1/9] Cargando {options.input_path}")
     mesh = io.load_mesh(options.input_path)
     log(f"      {len(mesh.vertices)} vértices, {len(mesh.faces)} triángulos")
+    if options.transform_path is not None:
+        import json
+
+        t = json.loads(Path(options.transform_path).read_text())
+        mesh.apply_transform(np.array(t["matriz"]))
+        options.scale = 1.0
+        log(f"      Escala y orientación del tablero ChArUco: x{t['escala']:.5g}, "
+            f"residuo {t['residuo_medio_mm']} mm con {t['fotos']} fotos")
+    elif options.up_axis == "y":
+        mesh = orientation.y_up_to_z_up(mesh)
+        log("      Orientación: Y arriba (RealityKit) -> Z arriba (slicer)")
 
     log("[2/9] Eliminando fragmentos sueltos (quedándonos con la pieza principal)")
     mesh = cleanup.keep_largest_component(mesh)
     log(f"      {len(mesh.faces)} triángulos tras el filtrado")
+    if options.denoise or options.mechanical:
+        mesh = completion.denoise(mesh)
+        log("      Ruido suavizado conservando aristas")
 
     plane = None
     if not options.skip_plane_removal:
@@ -64,11 +92,40 @@ def run_pipeline(options: PipelineOptions, log: Logger = print) -> dict:
     else:
         log("[4/9] Sin plano cortado, no se genera base plana explícita")
 
-    log("[5/9] Rellenando agujeros restantes y reparando no-manifold")
-    mesh = cleanup.fill_holes_and_repair(mesh, max_hole_size=options.max_hole_size)
+    # Con completado solo se cierran agujeritos aquí: los grandes los necesita la
+    # detección de simetría y luego los rellena Poisson.
+    mesh = cleanup.fill_holes_and_repair(mesh, max_hole_size=30 if options.complete else options.max_hole_size)
+    if options.complete:
+        log("[5/9] Completando la pieza (zonas sin escanear) y cerrando la malla")
+        extra_points = extra_normals = None
+        if options.symmetry != "off":
+            mirror = completion.detect_mirror_symmetry(mesh)
+            if mirror is None:
+                log("      Sin simetría clara: se completa siguiendo la curvatura (Poisson)")
+            else:
+                extra_points, extra_normals = completion.symmetry_fill_points(mesh, mirror)
+                log(f"      Simetría detectada (error x{mirror.score:.2f} sobre el ruido de muestreo): "
+                    f"{len(extra_points)} puntos reflejados rellenan la zona que falta")
+        mesh = completion.complete_watertight(mesh, extra_points, extra_normals)
+    else:
+        log("[5/9] Rellenando agujeros restantes y reparando no-manifold")
+    if options.mechanical:
+        total = 0
+        for _ in range(2):  # 2 pasadas: los vértices de arista convergen a la intersección
+            mesh, applied = mechanical.flatten_planar_faces(mesh)
+            total = max(total, applied)
+        log(f"      Pieza mecánica: {total} caras planas ajustadas a su plano exacto (aristas vivas)")
     log(f"      watertight={mesh.is_watertight}, winding_consistente={mesh.is_winding_consistent}")
 
     log("[6/9] Escalando a milímetros")
+    if options.transform_path is not None:
+        log("      Ya en milímetros reales (tablero ChArUco)")
+    elif options.longest_mm is not None:
+        options.scale = options.longest_mm / scaling.robust_longest_extent(mesh)
+        log(f"      Calibrado con la medida real: lado mayor = {options.longest_mm:g} mm (x{options.scale:.4g})")
+    elif all(v is None for v in (options.height_mm, options.width_mm, options.depth_mm, options.scale)):
+        options.scale = scaling.auto_scale_factor(mesh)
+        log(f"      Escala real del escaneo (LiDAR): x{options.scale:g}")
     mesh = scaling.scale_mesh(
         mesh,
         height_mm=options.height_mm,

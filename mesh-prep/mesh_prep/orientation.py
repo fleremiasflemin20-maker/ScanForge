@@ -139,3 +139,10 @@ def center_and_drop_to_bed(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
     min_z = bounds[0][2]
     mesh.apply_translation([-center_xy[0], -center_xy[1], -min_z])
     return mesh
+
+
+def y_up_to_z_up(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+    """RealityKit (USDZ/OBJ de Object Capture) usa Y arriba; los slicers, Z arriba."""
+    mesh = mesh.copy()
+    mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0]))
+    return mesh
