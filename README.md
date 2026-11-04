@@ -131,6 +131,35 @@ python -m mesh_prep.validate --mesh vidrio.stl --plane                  # vidrio
 Da error de forma (PF), de tamaño (PS), de distancia (SD) y planitud (F) en mm: es la
 forma de comprobar cada mejora con números en vez de a ojo.
 
+## Dividir figuras en partes que encajan
+
+Para figuras (anime, muñecos) y piezas de varias partes. Desde la app: pantalla del
+escaneo → **Dividir en partes**. O en el Mac:
+
+```bash
+# Por anatomía: corta por cuello, hombros, muñecas… con planos perfectos + pivote hexagonal
+python -m mesh_prep.parts --input pieza.stl --output partes/ --by shape
+
+# Por colores, para multicolor con el AMS (pelo, piel, ojos, ropa…)
+mesh-prep --input escaneo/model-obj/baked_mesh.obj --output listo --up-axis y --parts color --parts-colors 5
+
+# Corte manual con espiga suelta y holgura de 0,15 mm
+python -m mesh_prep.parts --input pieza.stl --output partes/ --cut z=40 --connector espiga --clearance 0.15
+```
+
+| Técnica | Cómo lo hace (como en CAD) |
+|---|---|
+| Uniones | CoACD descompone la figura en partes casi convexas: separa por donde se estrecha. |
+| Corte limpio | En cada unión se ajusta un plano, se desliza hasta la **sección más estrecha** y se corta solo esa extremidad (booleano exacto con Manifold). De las puntas hacia dentro: cabeza antes que cuello. |
+| Partes finas | Una parte de menos de 8 mm no se separa (no aloja encaje y se rompería). |
+| Encaje | **Pivote hexagonal** (no gira) con punta achaflanada y agujero con holgura (0,2 mm), o **espiga** suelta. El mayor que cabe con 1,2 mm de pared; nunca choca con otro encaje. |
+| Colores | Color de la textura por triángulo → k-means en CIELAB → limpieza de islas. Las fronteras salen de una sola superficie por par de zonas: sin rendijas. |
+| Salida | Un STL por parte (con su color en el nombre), `ensamblaje.3mf` con todo montado y `partes.json`. |
+
+Comprobado en los tests: cada parte es un sólido cerrado de un cuerpo, **0 mm³ de solape**
+entre partes y holgura real de **0,20 mm** alrededor del pivote. Poner nombre a cada parte
+("brazo izquierdo") requiere IA de visión y queda para una fase posterior.
+
 ## Por qué está estructurado así
 
 - **Reconstrucción en el iPhone y también en el Mac**: el iPhone procesa Object Capture

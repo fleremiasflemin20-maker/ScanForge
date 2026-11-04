@@ -35,6 +35,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--symmetry", choices=["auto", "off"], default="auto", help="Reconstruir lo que falta reflejando la pieza si es simétrica (default: auto).")
     parser.add_argument("--denoise", action="store_true", help="Suavizar el ruido del escaneo conservando aristas vivas.")
     parser.add_argument("--transform", help="charuco-transform.json (python -m mesh_prep.charuco solve): escala y orientación exactas del tablero.")
+    parser.add_argument("--parts", choices=["shape", "color"], help="Dividir en partes: shape (anatomía, cortes planos con encaje) o color (zonas de color para AMS).")
+    parser.add_argument("--parts-colors", type=int, default=4, help="Colores/filamentos para --parts color (default: 4).")
+    parser.add_argument("--parts-max", type=int, default=10, help="Máximo de partes para --parts shape (default: 10).")
+    parser.add_argument("--connector", choices=["pivote", "espiga", "ninguno"], default="pivote", help="Encaje entre partes (default: pivote hexagonal).")
+    parser.add_argument("--clearance", type=float, default=0.2, help="Holgura del encaje en mm (default: 0.2).")
     parser.add_argument("--mechanical", action="store_true", help="Pieza técnica: aplana caras planas a su plano exacto para ranuras y encajes nítidos (activa --denoise).")
 
     return parser
@@ -64,6 +69,11 @@ def main(argv: list[str] | None = None) -> int:
         mechanical=args.mechanical,
         longest_mm=args.longest_mm,
         transform_path=Path(args.transform) if args.transform else None,
+        parts_by=args.parts,
+        parts_colors=args.parts_colors,
+        parts_max=args.parts_max,
+        connector=args.connector,
+        clearance=args.clearance,
     )
 
     try:

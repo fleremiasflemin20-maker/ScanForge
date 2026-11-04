@@ -19,6 +19,9 @@ dependencies = [
     "lxml>=5.0",
     "opencv-python-headless>=4.8",
     "pillow-heif>=0.16",
+    "manifold3d>=3.0",
+    "coacd>=1.0",
+    "scikit-image>=0.22",
 ]
 
 [project.scripts]
@@ -26,6 +29,7 @@ mesh-prep = "mesh_prep.cli:main"
 scanforge-validate = "mesh_prep.validate:main"
 scanforge-sharpness = "mesh_prep.sharpness:main"
 scanforge-charuco = "mesh_prep.charuco:main"
+scanforge-parts = "mesh_prep.parts:main"
 
 [tool.setuptools.packages.find]
 include = ["mesh_prep*"]

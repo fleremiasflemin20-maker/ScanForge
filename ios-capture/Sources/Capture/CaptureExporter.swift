@@ -19,6 +19,26 @@ enum CaptureExporter {
         var longestMM: Double?
         /// Pieza técnica: caras planas exactas y aristas vivas (ranuras, encajes).
         var mechanical = false
+        /// División en partes: nil (no dividir), "shape" (anatomía) o "color".
+        var partsBy: String?
+        var partsColors = 4
+        /// "pivote" (hexagonal), "espiga" (suelta) o "ninguno".
+        var connector = "pivote"
+        var clearanceMM = 0.2
+
+        init() {}
+
+        // Decodificación tolerante: los JSON de versiones anteriores no tienen todos
+        // los campos.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            longestMM = try c.decodeIfPresent(Double.self, forKey: .longestMM)
+            mechanical = try c.decodeIfPresent(Bool.self, forKey: .mechanical) ?? false
+            partsBy = try c.decodeIfPresent(String.self, forKey: .partsBy)
+            partsColors = try c.decodeIfPresent(Int.self, forKey: .partsColors) ?? 4
+            connector = try c.decodeIfPresent(String.self, forKey: .connector) ?? "pivote"
+            clearanceMM = try c.decodeIfPresent(Double.self, forKey: .clearanceMM) ?? 0.2
+        }
     }
 
     static func loadOptions(for session: CaptureSessionInfo) -> ScanOptions {

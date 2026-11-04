@@ -10,7 +10,7 @@ from typing import Callable
 import numpy as np
 import trimesh
 
-from . import cleanup, completion, decimate, io, mechanical, orientation, plane_removal, report, scaling
+from . import cleanup, completion, decimate, io, mechanical, orientation, parts, plane_removal, report, scaling
 
 Logger = Callable[[str], None]
 
@@ -42,22 +42,40 @@ class PipelineOptions:
     longest_mm: float | None = None
     # charuco-transform.json: lleva la reconstrucción a mm reales con el tablero en Z=0.
     transform_path: Path | None = None
+    # División en partes al final: "shape" (anatomía, cortes planos) o "color".
+    parts_by: str | None = None
+    parts_colors: int = 4
+    parts_max: int = 10
+    connector: str = "pivote"
+    clearance: float = parts.CLEARANCE_MM
 
 
 def run_pipeline(options: PipelineOptions, log: Logger = print) -> dict:
     log(f"[1/9] Cargando {options.input_path}")
     mesh = io.load_mesh(options.input_path)
     log(f"      {len(mesh.vertices)} vértices, {len(mesh.faces)} triángulos")
+    # Los colores del escaneo viajan con la pieza aunque se rehaga la malla.
+    cloud = parts.ColorCloud.from_mesh(mesh)
+    if cloud is not None:
+        log("      Colores del escaneo guardados (textura)")
+
+    def follow(before: trimesh.Trimesh, after: trimesh.Trimesh) -> trimesh.Trimesh:
+        if cloud is not None:
+            cloud.follow(before, after)
+        return after
+
     if options.transform_path is not None:
         import json
 
         t = json.loads(Path(options.transform_path).read_text())
         mesh.apply_transform(np.array(t["matriz"]))
+        if cloud is not None:
+            cloud.apply(np.array(t["matriz"]))
         options.scale = 1.0
         log(f"      Escala y orientación del tablero ChArUco: x{t['escala']:.5g}, "
             f"residuo {t['residuo_medio_mm']} mm con {t['fotos']} fotos")
     elif options.up_axis == "y":
-        mesh = orientation.y_up_to_z_up(mesh)
+        mesh = follow(mesh, orientation.y_up_to_z_up(mesh))
         log("      Orientación: Y arriba (RealityKit) -> Z arriba (slicer)")
 
     log("[2/9] Eliminando fragmentos sueltos (quedándonos con la pieza principal)")
@@ -75,7 +93,7 @@ def run_pipeline(options: PipelineOptions, log: Logger = print) -> dict:
             log("      No se detectó un plano de mesa claro; se omite el corte (usa --skip-plane-removal para silenciar este aviso).")
         else:
             log(f"      Plano detectado (cubre {plane.face_area_fraction:.1%} del área total)")
-            mesh = orientation.orient_to_canonical_frame(mesh, plane)
+            mesh = follow(mesh, orientation.orient_to_canonical_frame(mesh, plane))
             canonical_plane = plane_removal.SupportPlane(
                 normal=np.array([0.0, 0.0, 1.0]), offset=0.0, face_area_fraction=plane.face_area_fraction
             )
@@ -126,21 +144,21 @@ def run_pipeline(options: PipelineOptions, log: Logger = print) -> dict:
     elif all(v is None for v in (options.height_mm, options.width_mm, options.depth_mm, options.scale)):
         options.scale = scaling.auto_scale_factor(mesh)
         log(f"      Escala real del escaneo (LiDAR): x{options.scale:g}")
-    mesh = scaling.scale_mesh(
+    mesh = follow(mesh, scaling.scale_mesh(
         mesh,
         height_mm=options.height_mm,
         width_mm=options.width_mm,
         depth_mm=options.depth_mm,
         scale=options.scale,
-    )
+    ))
     log(f"      dimensiones: {tuple(round(v, 1) for v in mesh.extents)} mm")
 
     if plane is not None:
         log("[7/9] Centrando y apoyando sobre la cama (Z=0)")
-        mesh = orientation.center_and_drop_to_bed(mesh)
+        mesh = follow(mesh, orientation.center_and_drop_to_bed(mesh))
     else:
         log("[7/9] Centrando en X/Y (sin plano de referencia para apoyar en Z=0 con certeza)")
-        mesh = orientation.center_and_drop_to_bed(mesh)
+        mesh = follow(mesh, orientation.center_and_drop_to_bed(mesh))
 
     log(f"[8/9] Decimando a un máximo de {options.target_triangles} triángulos")
     mesh = decimate.decimate_to_target(mesh, options.target_triangles)
@@ -155,6 +173,24 @@ def run_pipeline(options: PipelineOptions, log: Logger = print) -> dict:
     log(f"      3MF: {paths['3mf']}")
     log(f"      STL: {paths['stl']}")
     log(f"      Reporte: {report_path}")
+    if cloud is not None:
+        cloud.save(options.output_dir / f"{options.basename}.colors.npz")
+
+    if options.parts_by:
+        label = "colores" if options.parts_by == "color" else "forma (anatomía)"
+        log(f"[+] Dividiendo en partes por {label}")
+        colors = None
+        if options.parts_by == "color":
+            if cloud is None:
+                raise ValueError("Para dividir por colores hace falta el escaneo con textura (OBJ de mac-reconstruct).")
+            colors = cloud.face_colors(mesh)
+        pieces = parts.divide(mesh, options.parts_by, options.parts_colors, options.parts_max,
+                              options.connector, options.clearance, log=log, colors=colors)
+        exported = parts.export_parts(pieces, options.output_dir / "partes")
+        for p in exported["partes"]:
+            log(f"      {p['archivo']}  {p['volumen_cm3']} cm³  {'; '.join(p['notas'])}")
+        log(f"      Ensamblaje: {exported['ensamblaje']}")
+        result["partes"] = exported["partes"]
 
     if not result["is_watertight"]:
         log("⚠️  La malla final NO es watertight. Revisa --max-hole-size o la cobertura de fotos en la captura; "
