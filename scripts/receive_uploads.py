@@ -11,6 +11,11 @@ Protocolo, por conexión:
 
 Uso:
   python3 receive_uploads.py --captures-dir ~/ScanForge/captures --port 5050
+  python3 receive_uploads.py --auto-process --open "Bambu Studio"
+
+Con --auto-process cada sesión recibida se procesa sola: fotos (Objeto Pro / Fotos
+48 MP) -> scanforge.sh (reconstrucción Full en el Mac + completado + escala LiDAR);
+nubes PLY (LiDAR Fusión / Micro TrueDepth) -> mesh-prep directamente.
 """
 from __future__ import annotations
 
@@ -18,7 +23,9 @@ import argparse
 import json
 import re
 import socket
+import shutil
 import socketserver
+import subprocess
 import sys
 import threading
 from datetime import datetime
@@ -94,6 +101,55 @@ class UploadHandler(socketserver.BaseRequestHandler):
             UploadHandler.on_session_received(session_dir)
 
 
+SCRIPTS_DIR = Path(__file__).resolve().parent
+PHOTO_EXTENSIONS = {".heic", ".heif", ".jpg", ".jpeg", ".png", ".dng"}
+
+
+def _mesh_prep_command() -> list[str]:
+    return [str(SCRIPTS_DIR / "mesh-prep.sh")]
+
+
+def process_session(session_dir: Path, workdir: Path, detail: str, open_app: str | None) -> None:
+    """Reconstruye y completa una sesión recibida (se llama en un hilo aparte)."""
+    name = session_dir.name
+    photos = [p for p in session_dir.iterdir() if p.suffix.lower() in PHOTO_EXTENSIONS]
+    clouds = sorted(session_dir.glob("*.ply"))
+    log_path = session_dir / "procesado.log"
+
+    if len(photos) >= 10:
+        cmd = ["bash", str(SCRIPTS_DIR / "scanforge.sh"), "--input", str(session_dir), "--name", name,
+               "--detail", detail, "--workdir", str(workdir)]
+        if open_app:
+            cmd += ["--open", open_app]
+        env = None  # scanforge.sh encuentra mac-reconstruct y mesh-prep.sh por sí solo
+    elif clouds:
+        out = workdir / "printable" / name
+        cmd = _mesh_prep_command() + ["--input", str(clouds[0]), "--output", str(out), "--skip-plane-removal"]
+        env = None
+    else:
+        print(f"[auto] {name}: no hay fotos ni nubes PLY que procesar.")
+        return
+
+    # Opciones de precisión elegidas en la app (pantalla de resultado).
+    options_path = session_dir / "scanforge-options.json"
+    options = json.loads(options_path.read_text()) if options_path.exists() else {}
+    if options.get("mechanical"):
+        cmd.append("--mechanical")
+    if options.get("longestMM"):
+        cmd += ["--longest-mm", str(float(options["longestMM"]))]
+
+    print(f"[auto] Procesando {name} (log: {log_path})")
+    with open(log_path, "w", encoding="utf-8") as log:
+        result = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, env=env)
+    if result.returncode == 0:
+        out_dir = workdir / "printable" / name
+        print(f"[auto] ✓ {name} listo: {out_dir}")
+        if open_app and clouds and len(photos) < 10:
+            subprocess.run(["open", "-a", open_app, str(out_dir / "model.3mf")])
+    else:
+        print(f"[auto] ✗ {name} falló (código {result.returncode}). Revisa {log_path}", file=sys.stderr)
+
+
 class ReusableTCPServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
 
@@ -123,12 +179,25 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--captures-dir", default="./captures", help="Carpeta donde guardar las sesiones recibidas.")
     parser.add_argument("--port", type=int, default=5050)
+    parser.add_argument("--auto-process", action="store_true", help="Reconstruir y completar cada sesión al recibirla.")
+    parser.add_argument("--workdir", default="~/ScanForge", help="Carpeta base de reconstrucciones e imprimibles.")
+    parser.add_argument("--detail", default="full", choices=["reduced", "medium", "full", "raw"],
+                        help="Detalle de la reconstrucción en el Mac (default: full; raw = máximo, muy lento).")
+    parser.add_argument("--open", dest="open_app", help='Abrir el resultado en un slicer, p.ej. "Bambu Studio".')
     args = parser.parse_args()
 
     captures_dir = Path(args.captures_dir).expanduser()
     captures_dir.mkdir(parents=True, exist_ok=True)
 
     UploadHandler.captures_dir = captures_dir
+    if args.auto_process:
+        workdir = Path(args.workdir).expanduser()
+
+        def on_session(session_dir: Path) -> None:
+            threading.Thread(target=process_session, args=(session_dir, workdir, args.detail, args.open_app),
+                             daemon=True).start()
+
+        UploadHandler.on_session_received = staticmethod(on_session)
 
     server = ReusableTCPServer(("0.0.0.0", args.port), UploadHandler)
     zeroconf = advertise_bonjour(args.port)

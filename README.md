@@ -59,12 +59,77 @@ mesh-prep --input objeto-truedepth.ply --output listo --scale 1 --skip-plane-rem
 `--scale 1` se debe a que ScanForge Pro ya exporta en milímetros reales. Quita
 `--skip-plane-removal` si escaneaste el objeto sobre una mesa y quieres cortarla.
 
-## Mac (opcional: máximo detalle con fotos)
+## Mac: máxima calidad y completado automático
+
+El iPhone solo puede reconstruir con detalle *reducido*; el Mac llega a **Full/Raw**.
+Instalación (una vez):
 
 ```bash
-cd mac-reconstruct && swift build -c release
-./scripts/scanforge.sh --input <carpeta-de-fotos> --name mi-objeto --height-mm 150
+cd mac-reconstruct && swift build -c release && cd ..
+cd mesh-prep && uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e . && cd ..
 ```
+
+Deja el receptor escuchando; cada escaneo que subas desde la app (botón **Máxima
+calidad: procesar en el Mac**) se reconstruye, se completa y se abre en el slicer:
+
+```bash
+python3 scripts/receive_uploads.py --auto-process --open "Bambu Studio"
+```
+
+O a mano con una carpeta de fotos:
+
+```bash
+./scripts/scanforge.sh --input <carpeta-de-fotos> --name mi-objeto --open "OrcaSlicer"
+```
+
+Qué hace mesh-prep con la malla:
+
+| Paso | Qué hace |
+|---|---|
+| Escala real | Las fotos de Objeto Pro llevan profundidad LiDAR: el modelo sale en metros reales y se pasa a mm sin medir nada (o fuerza una medida con `--height-mm`). |
+| Orientación | Y arriba (RealityKit) → Z arriba (slicer) con `--up-axis y`. |
+| Completado | Poisson *screened* cierra los huecos siguiendo la curvatura; donde sí hubo datos, la superficie vuelve a la medida original (no se pierde detalle). |
+| Simetría | Si la pieza es claramente simétrica, la parte buena se refleja para reconstruir la que falta, solo dentro de los agujeros (`--symmetry off` para desactivarlo). |
+| Suavizado | `--denoise`: quita el granulado conservando aristas vivas. |
+| Pieza mecánica | `--mechanical`: detecta las caras planas (paredes de ranuras, asientos, bridas), las ajusta a su plano exacto y recorta los picos de las aristas. Lo curvo (agujeros, redondeos) no se toca. En la app: interruptor «Pieza mecánica». |
+| Calibración | `--longest-mm 60`: lado más largo medido con calibre; corrige la escala ignorando picos sueltos. En la app: campo «Lado más largo». |
+
+Precisión medida (pieza ranurada de 60×30×20 mm con ruido de escaneo de ±0,15 mm,
+`--mechanical --longest-mm 60`): caras a 59,8 × 29,9 × 19,98 mm, malla cerrada. Para
+encajes de tolerancia fina usa el STL como referencia y remodela en CAD (Fusion 360,
+Onshape): es lo que se hace también con los escáneres profesionales.
+
+> `scripts/mesh-prep.sh` ejecuta mesh-prep desde su `.venv` aunque macOS marque como
+> ocultos los `.pth` de la instalación (pasa en Documentos sincronizado con iCloud).
+
+## Protocolo pro con plato giratorio (Fase 1)
+
+1. **Imprime el tablero** [`docs/tablero-charuco.pdf`](docs/tablero-charuco.pdf) al 100 %
+   y comprueba con el calibre que un cuadro mide **16,00 mm**. Pégalo plano sobre el plato.
+2. Pieza en el centro del tablero, iPhone en trípode, luz difusa (caja de luz). Piezas
+   brillantes: spray de escaneo (AESUB) o polarización cruzada.
+3. App → **Fotos 48 MP** → toca la pieza (enfoque fijo) → **Auto 2 s**. La app guía
+   **4 vueltas de 36 fotos** (una cada 10°): baja, media, alta y la pieza volteada.
+4. **Máxima calidad: procesar en el Mac**. El Mac hace, en orden:
+   - `mesh_prep.sharpness`: descarta las fotos movidas de cada vuelta.
+   - `mac-reconstruct --masks --poses`: máscara de la pieza con Vision (el fondo
+     estático ya no confunde) y poses de cámara.
+   - `mesh_prep.charuco solve`: escala **exacta en las 3 direcciones** y Z arriba a
+     partir del tablero (error de escala estimado en el informe).
+   - `mesh-prep --transform`: completado, modo mecánico, base plana y 3MF/STL.
+
+### Medir la precisión real (VDI/VDE 2634 casero)
+
+Escanea artefactos de medida conocida y compara:
+
+```bash
+python -m mesh_prep.validate --mesh bola.stl --sphere 25.4              # bola de rodamiento mateada
+python -m mesh_prep.validate --mesh barra.stl --sphere 25.4 --spacing 100  # dos bolas a distancia conocida
+python -m mesh_prep.validate --mesh vidrio.stl --plane                  # vidrio float / bloque patrón
+```
+
+Da error de forma (PF), de tamaño (PS), de distancia (SD) y planitud (F) en mm: es la
+forma de comprobar cada mejora con números en vez de a ojo.
 
 ## Por qué está estructurado así
 

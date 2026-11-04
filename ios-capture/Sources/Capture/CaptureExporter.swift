@@ -12,6 +12,27 @@ enum CaptureExporter {
         let exports: [String]
     }
 
+    /// Opciones de precisión que el Mac aplica al procesar (`scanforge-options.json`,
+    /// lo lee scripts/receive_uploads.py).
+    struct ScanOptions: Codable, Equatable {
+        /// Lado más largo de la pieza medido con calibre, en mm: calibra la escala.
+        var longestMM: Double?
+        /// Pieza técnica: caras planas exactas y aristas vivas (ranuras, encajes).
+        var mechanical = false
+    }
+
+    static func loadOptions(for session: CaptureSessionInfo) -> ScanOptions {
+        let url = session.folderURL.appendingPathComponent("scanforge-options.json")
+        guard let data = try? Data(contentsOf: url),
+              let options = try? JSONDecoder().decode(ScanOptions.self, from: data) else { return ScanOptions() }
+        return options
+    }
+
+    static func saveOptions(_ options: ScanOptions, for session: CaptureSessionInfo) {
+        let url = session.folderURL.appendingPathComponent("scanforge-options.json")
+        if let data = try? JSONEncoder().encode(options) { try? data.write(to: url, options: .atomic) }
+    }
+
     static func finalize(_ session: CaptureSessionInfo) {
         let metadata = Metadata(
             objectName: session.objectName,

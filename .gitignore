@@ -24,3 +24,6 @@ printable/
 
 # Sistema
 .DS_Store
+
+# Generado por XcodeGen a partir de project.yml
+ios-capture/Sources/Info.plist

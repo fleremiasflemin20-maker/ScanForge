@@ -17,6 +17,15 @@ struct LiDARCaptureView: View {
     @State private var passCompleted = false
     @State private var passCount = 1
     @State private var errorMessage: String?
+    @State private var attempt = 0
+    @State private var shots = 0
+    @State private var maxShots = 0
+    @State private var feedback: Set<ObjectCaptureSession.Feedback> = []
+    @State private var confirmFinish = false
+
+    /// Por debajo de esto la reconstrucción suele fallar (Apple recomienda 30–100+).
+    private let minimumShots = 30
+    @State private var stalled = false
 
     /// Copia simple del estado de la sesión: evita depender de si `CaptureState` es
     /// Equatable (tiene `.failed(Error)`), y se actualiza desde `stateUpdates`.
@@ -26,7 +35,7 @@ struct LiDARCaptureView: View {
 
     var body: some View {
         ZStack {
-            if let captureSession {
+            if let captureSession, stage != .failed, stage != .completed {
                 ObjectCaptureView(session: captureSession)
                     .ignoresSafeArea()
             } else {
@@ -42,7 +51,7 @@ struct LiDARCaptureView: View {
                     .buttonStyle(OverlayButtonStyle())
                     Spacer()
                     if stage == .capturing {
-                        Text("Pasada \(passCount)")
+                        Text("\(shots) fotos · pasada \(passCount)")
                             .font(.footnote.bold())
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
@@ -63,23 +72,72 @@ struct LiDARCaptureView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
 
+                feedbackBanner
                 hint
+                if stalled && stage == .initializing {
+                    Button("Reintentar") { attempt += 1 }
+                        .buttonStyle(PrimaryCaptureButtonStyle())
+                        .padding(.bottom, 8)
+                }
                 controls
                     .padding(.bottom, 32)
             }
         }
-        .task {
-            guard captureSession == nil else { return }
+        .task(id: attempt) {
+            // Si en 8 s la sesión sigue "iniciando", ofrecemos reintentar.
+            stalled = false
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(8))
+                if stage == .initializing { stalled = true }
+            }
+            if let old = captureSession {
+                old.cancel()
+                captureSession = nil
+            }
+            print("[ObjectCapture] intento \(attempt), isSupported=\(ObjectCaptureSession.isSupported), carpeta=\(sessionInfo.folderURL.path)")
+            guard ObjectCaptureSession.isSupported else {
+                stage = .failed
+                errorMessage = "Objeto Pro necesita un iPhone con LiDAR."
+                return
+            }
+            // La carpeta de imágenes debe existir y estar vacía.
+            let fm = FileManager.default
+            try? fm.createDirectory(at: sessionInfo.folderURL, withIntermediateDirectories: true)
+            for leftover in (try? fm.contentsOfDirectory(at: sessionInfo.folderURL, includingPropertiesForKeys: nil)) ?? [] {
+                try? fm.removeItem(at: leftover)
+            }
+
             let session = ObjectCaptureSession()
-            captureSession = session
             var configuration = ObjectCaptureSession.Configuration()
             configuration.checkpointDirectory = sessionInfo.checkpointFolderURL
             configuration.isOverCaptureEnabled = true
             session.start(imagesDirectory: sessionInfo.folderURL, configuration: configuration)
+            // `stateUpdates` solo emite cambios futuros: leemos el estado actual por si
+            // la sesión ya pasó a .ready o falló al arrancar.
+            print("[ObjectCapture] tras start: \(session.state)")
+            apply(session.state)
+            if stage != .failed { captureSession = session }
 
             await withTaskGroup(of: Void.self) { group in
                 group.addTask { @MainActor in
                     for await state in session.stateUpdates { apply(state) }
+                }
+                // Respaldo: también leemos el estado directamente, por si `stateUpdates`
+                // no emite (la sesión cambia pero la vista no se entera).
+                group.addTask { @MainActor in
+                    var last = ""
+                    while !Task.isCancelled {
+                        shots = session.numberOfShotsTaken
+                        maxShots = session.maximumNumberOfInputImages
+                        if session.feedback != feedback { feedback = session.feedback }
+                        let current = String(describing: session.state)
+                        if current != last {
+                            last = current
+                            print("[ObjectCapture] sondeo: \(current) tracking=\(session.cameraTracking) feedback=\(session.feedback)")
+                            apply(session.state)
+                        }
+                        try? await Task.sleep(for: .milliseconds(500))
+                    }
                 }
                 group.addTask { @MainActor in
                     for await completed in session.userCompletedScanPassUpdates { passCompleted = completed }
@@ -89,6 +147,7 @@ struct LiDARCaptureView: View {
     }
 
     private func apply(_ state: ObjectCaptureSession.CaptureState) {
+        print("[ObjectCapture] estado: \(state)")
         switch state {
         case .initializing: stage = .initializing
         case .ready: stage = .ready
@@ -106,16 +165,51 @@ struct LiDARCaptureView: View {
         }
     }
 
+    /// Avisos de Apple traducidos: es lo que hace que una captura salga nítida o falle.
+    @ViewBuilder
+    private var feedbackBanner: some View {
+        let messages = feedback.compactMap(Self.message(for:))
+        if !messages.isEmpty, stage == .ready || stage == .detecting || stage == .capturing {
+            VStack(spacing: 4) {
+                ForEach(messages, id: \.self) { Text($0) }
+            }
+            .font(.callout.weight(.semibold))
+            .multilineTextAlignment(.center)
+            .padding(10)
+            .background(Color.yellow.opacity(0.92))
+            .foregroundStyle(.black)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+        }
+    }
+
+    private static func message(for feedback: ObjectCaptureSession.Feedback) -> String? {
+        switch feedback {
+        case .environmentLowLight: return "💡 Poca luz: enciende más luz o acércate a una ventana"
+        case .environmentTooDark: return "🌑 Demasiado oscuro: así no se puede escanear"
+        case .objectTooClose: return "↔️ Demasiado cerca: aléjate un poco"
+        case .objectTooFar: return "↔️ Demasiado lejos: acércate a la pieza"
+        case .movingTooFast: return "🐢 Más despacio"
+        case .outOfFieldOfView: return "🎯 La pieza se sale de la imagen: céntrala"
+        case .objectNotDetected: return "🎯 No veo la pieza: apunta a ella"
+        case .objectNotFlippable: return "Esta pieza no conviene girarla: escanéala de pie"
+        case .overCapturing: return nil
+        @unknown default: return nil
+        }
+    }
+
     @ViewBuilder
     private var hint: some View {
         let text: String? = {
             switch stage {
-            case .initializing: return "Iniciando LiDAR…"
-            case .ready: return "Apunta al objeto con el punto central"
-            case .detecting: return "Ajusta la caja para que envuelva el objeto"
+            case .initializing:
+                return stalled ? "El LiDAR no termina de arrancar. Mueve el iPhone despacio apuntando a la pieza, o pulsa Reintentar." : "Iniciando LiDAR…"
+            case .ready: return "Modo enfoque: pon el punto blanco sobre la pieza y pulsa «Enfocar pieza»"
+            case .detecting: return "Ajusta la caja para que envuelva SOLO la pieza (arrastra sus bordes). Lo de fuera se ignora."
             case .capturing where passCompleted:
                 return "Pasada completa. Gira el objeto para capturar la base, o termina."
-            case .capturing: return "Rodea el objeto despacio hasta completar la cúpula"
+            case .capturing: return "Camina alrededor de la pieza despacio (no la gires a ella) hasta completar el anillo. \(shots)/\(minimumShots)+ fotos"
             case .finishing: return "Guardando fotos…"
             default: return nil
             }
@@ -137,7 +231,7 @@ struct LiDARCaptureView: View {
     private var controls: some View {
         switch stage {
         case .ready:
-            Button("Detectar objeto") {
+            Button("Enfocar pieza") {
                 _ = captureSession?.startDetecting()
             }
             .buttonStyle(PrimaryCaptureButtonStyle())
@@ -158,8 +252,16 @@ struct LiDARCaptureView: View {
                     }
                     .buttonStyle(OverlayButtonStyle())
                 }
-                Button("Terminar") { captureSession?.finish() }
-                    .buttonStyle(PrimaryCaptureButtonStyle())
+                Button("Terminar") {
+                    if shots < minimumShots { confirmFinish = true } else { captureSession?.finish() }
+                }
+                .buttonStyle(PrimaryCaptureButtonStyle())
+                .confirmationDialog("Solo hay \(shots) fotos", isPresented: $confirmFinish, titleVisibility: .visible) {
+                    Button("Seguir capturando", role: .cancel) {}
+                    Button("Terminar igualmente") { captureSession?.finish() }
+                } message: {
+                    Text("Con menos de \(minimumShots) fotos la reconstrucción suele fallar. Rodea la pieza completa (y gírala para la base).")
+                }
             }
         case .failed:
             Button("Cerrar") { onCancelled() }

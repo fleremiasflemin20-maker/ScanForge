@@ -17,10 +17,15 @@ dependencies = [
     "rtree>=1.2",
     "networkx>=3.2",
     "lxml>=5.0",
+    "opencv-python-headless>=4.8",
+    "pillow-heif>=0.16",
 ]
 
 [project.scripts]
 mesh-prep = "mesh_prep.cli:main"
+scanforge-validate = "mesh_prep.validate:main"
+scanforge-sharpness = "mesh_prep.sharpness:main"
+scanforge-charuco = "mesh_prep.charuco:main"
 
 [tool.setuptools.packages.find]
 include = ["mesh_prep*"]

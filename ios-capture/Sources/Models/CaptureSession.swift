@@ -42,6 +42,16 @@ enum ScanMode: String, Codable, CaseIterable, Identifiable {
         }
     }
 
+    /// Etiqueta para orientar la elección en la pantalla de inicio.
+    var badge: String? {
+        switch self {
+        case .objectCapture: return "Recomendado"
+        case .lidarFusion: return "Piezas grandes"
+        case .trueDepthMicro: return "Piezas pequeñas"
+        case .manualPhotos: return "Máximo detalle (Mac)"
+        }
+    }
+
     var systemImage: String {
         switch self {
         case .objectCapture: return "cube.transparent"
@@ -72,9 +82,15 @@ struct CaptureSessionInfo: Identifiable, Codable, Hashable {
         return url
     }
 
-    /// Subcarpeta de checkpoints de Object Capture (acelera la reconstrucción en el iPhone).
+    /// Checkpoints de Object Capture (aceleran la reconstrucción en el iPhone). Van en
+    /// Caches y NO dentro de la carpeta de fotos: ObjectCaptureSession exige que la
+    /// carpeta de imágenes esté vacía al empezar; si no, la sesión falla en silencio
+    /// ("Cannot make a view for a deinitialized ObjectCaptureSession").
     var checkpointFolderURL: URL {
-        let url = folderURL.appendingPathComponent("Checkpoints", isDirectory: true)
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        let url = caches
+            .appendingPathComponent("ScanForgeCheckpoints", isDirectory: true)
+            .appendingPathComponent(folderURL.lastPathComponent, isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
@@ -92,14 +108,27 @@ struct CaptureSessionInfo: Identifiable, Codable, Hashable {
     }
 }
 
+/// Protocolo de plato giratorio (Artec/OpenScan): 3 anillos a distintas alturas y uno
+/// más con la pieza volteada para capturar la base.
 enum CapturePhase: Equatable {
-    case low, mid, high
+    case low, mid, high, flip
 
     var label: String {
         switch self {
         case .low: return "altura baja"
         case .mid: return "altura media"
         case .high: return "altura alta"
+        case .flip: return "pieza volteada (base)"
+        }
+    }
+
+    /// Qué tiene que hacer el usuario al empezar esta fase.
+    var instruction: String {
+        switch self {
+        case .low: return "Cámara baja, casi a la altura de la pieza."
+        case .mid: return "Sube la cámara: mira la pieza a unos 30° desde arriba."
+        case .high: return "Sube más: mira la pieza a unos 60° desde arriba."
+        case .flip: return "Voltea la pieza (base hacia arriba) y vuelve a la altura media."
         }
     }
 
@@ -107,10 +136,12 @@ enum CapturePhase: Equatable {
         switch self {
         case .low: return .mid
         case .mid: return .high
-        case .high: return nil
+        case .high: return .flip
+        case .flip: return nil
         }
     }
 }
+
 
 /// Carpeta raíz donde ScanForge guarda todas las capturas, lista para subir al Mac,
 /// compartir, o abrir desde la app Archivos (On My iPhone → ScanForge).

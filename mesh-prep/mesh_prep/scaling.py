@@ -49,3 +49,20 @@ def scale_mesh(
     mesh = mesh.copy()
     mesh.apply_scale(factor)
     return mesh
+
+
+def auto_scale_factor(mesh: trimesh.Trimesh) -> float:
+    """Object Capture con LiDAR y los PLY de la app ya vienen a escala real. Las
+    reconstrucciones de RealityKit están en metros y la app exporta en milímetros: una
+    pieza de menos de 5 unidades de lado solo puede estar en metros."""
+    return 1000.0 if float(mesh.extents.max()) < 5.0 else 1.0
+
+
+def robust_longest_extent(mesh: trimesh.Trimesh) -> float:
+    """Lado más largo ignorando vértices sueltos (picos de ruido en esquinas): es lo
+    que mide un calibre apoyado en las caras, no la punta de un pico de 0,5 mm."""
+    import numpy as np
+
+    v = mesh.vertices
+    extents = np.percentile(v, 99.9, axis=0) - np.percentile(v, 0.1, axis=0)
+    return float(extents.max())

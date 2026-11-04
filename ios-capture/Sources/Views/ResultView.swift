@@ -11,6 +11,8 @@ struct ResultView: View {
     @StateObject private var uploader = MacUploader()
     @State private var files: [URL] = []
     @State private var quickLookURL: URL?
+    @State private var options = CaptureExporter.ScanOptions()
+    @State private var longestText = ""
 
     var body: some View {
         List {
@@ -25,6 +27,23 @@ struct ResultView: View {
 
             if session.mode == .objectCapture {
                 reconstructionSection
+            }
+
+            Section {
+                HStack {
+                    Text("Lado más largo")
+                    Spacer()
+                    TextField("mm (calibre)", text: $longestText)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 120)
+                    Text("mm").foregroundStyle(.secondary)
+                }
+                Toggle("Pieza mecánica (ranuras y encajes)", isOn: $options.mechanical)
+            } header: {
+                Text("Precisión para piezas técnicas")
+            } footer: {
+                Text("Mide con un calibre el lado más largo de la pieza: el Mac corrige la escala con esa medida (la mayor fuente de error). «Pieza mecánica» deja las caras planas exactas y las aristas vivas, sin redondear ranuras ni encajes. Se aplica al procesar en el Mac.")
             }
 
             Section("Modelos") {
@@ -61,16 +80,33 @@ struct ResultView: View {
             }
 
             Section {
-                Button("Subir sesión al Mac (red local)") { uploader.upload(session: session) }
+                Button {
+                    uploader.upload(session: session)
+                } label: {
+                    Label("Máxima calidad: procesar en el Mac", systemImage: "desktopcomputer")
+                        .font(.headline)
+                }
                 uploadStatus
+            } header: {
+                Text("Mac")
             } footer: {
-                Text("STL/OBJ salen en milímetros con Z arriba: se importan a escala real en Bambu Studio, Creality Print u OrcaSlicer. Los PLY son nubes de puntos: conviértelos en malla con mesh-prep (Poisson). También están en Archivos → En mi iPhone → ScanForge.")
+                Text("El Mac reconstruye con detalle Full (el iPhone solo permite detalle reducido), completa las zonas que no se vieron, cierra la malla y la deja a escala real lista para el slicer. En el Mac: scripts/receive_uploads.py --auto-process --open \"Bambu Studio\".\n\nSTL/OBJ salen en milímetros con Z arriba. También están en Archivos → En mi iPhone → ScanForge.")
             }
         }
         .navigationTitle(session.objectName)
         .navigationBarTitleDisplayMode(.inline)
         .quickLookPreview($quickLookURL)
-        .onAppear(perform: reload)
+        .onAppear {
+            reload()
+            options = CaptureExporter.loadOptions(for: session)
+            longestText = options.longestMM.map { String(format: "%g", $0) } ?? ""
+        }
+        .onChange(of: longestText) { _, text in
+            options.longestMM = Double(text.replacingOccurrences(of: ",", with: "."))
+        }
+        .onChange(of: options) { _, newValue in
+            CaptureExporter.saveOptions(newValue, for: session)
+        }
     }
 
     @ViewBuilder
